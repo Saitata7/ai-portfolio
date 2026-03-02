@@ -16,15 +16,16 @@ export const AGENT_STATES = {
 };
 
 export default class Agent {
-  constructor(homeNode, id, nodes) {
+  constructor(homeNode, id, nodes, size = 28) {
     this.homeNode = homeNode;
     this.id = id;
     const n = nodes[homeNode];
-    this.x = n.x + (id === 0 ? -35 : 35);
+    const offset = n.w * 0.27;
+    this.x = n.x + (id === 0 ? -offset : offset);
     this.y = n.y + n.h / 2 + 40 + Math.random() * 15;
     this.homeX = this.x;
     this.homeY = this.y;
-    this.size = 28;
+    this.size = size;
     this.color = n.color;
     this.state = AGENT_STATES.IDLE;
     this.targetX = this.x;
@@ -57,7 +58,8 @@ export default class Agent {
 
     // Bug chase
     this.chasingBug = null;
-    this.weaponType = null; // 'beam' | 'sword' | 'shield'
+    this.weaponType = null; // 'gun'
+    this.shootCooldown = 0;
   }
 
   navToNode(idx, nodes) {
@@ -74,6 +76,7 @@ export default class Agent {
     this.state = AGENT_STATES.WALK_HOME;
     this.chasingBug = null;
     this.weaponType = null;
+    this.shootCooldown = 0;
   }
 
   update(dt, time, world) {
@@ -238,10 +241,17 @@ export default class Agent {
 
       case AGENT_STATES.BUG_CHASE:
         if (this.chasingBug) {
-          this.targetX = this.chasingBug.x;
-          this.targetY = this.chasingBug.y;
-          if (this._walkTo(dt, 2.4)) {
-            // Close enough to zap
+          const bdx = this.chasingBug.x - this.x;
+          const bdy = this.chasingBug.y - this.y;
+          const bDist = Math.hypot(bdx, bdy);
+          // Chase until in shooting range, then hold position and aim
+          if (bDist > 80) {
+            this.targetX = this.chasingBug.x;
+            this.targetY = this.chasingBug.y;
+            this._walkTo(dt, 2.4);
+          } else {
+            // In range — face the bug but stay put
+            this.facing = bdx > 0 ? 1 : -1;
           }
         }
         break;
@@ -524,158 +534,84 @@ export default class Agent {
 
   _drawWeapon(ctx, s, time) {
     ctx.save();
-    // Position weapon at right hand area
-    ctx.translate(s * 0.35, s * 0.15);
+    // Position at right hand area
+    ctx.translate(s * 0.35, s * 0.1);
 
-    switch (this.weaponType) {
-      case 'beam': {
-        // Energy beam gun — barrel + glow tip
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        // Gun barrel
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(s * 0.4, -s * 0.1);
-        ctx.stroke();
-        // Gun body block
-        ctx.fillStyle = '#1a2845';
-        ctx.strokeStyle = this.color + '66';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(-s * 0.04, -s * 0.05, s * 0.16, s * 0.1, 2);
-        ctx.fill();
-        ctx.stroke();
-        // Barrel tip glow
-        const gunGlow = ctx.createRadialGradient(
-          s * 0.4, -s * 0.1, 0, s * 0.4, -s * 0.1, s * 0.12,
-        );
-        gunGlow.addColorStop(0, this.color + 'aa');
-        gunGlow.addColorStop(1, 'transparent');
-        ctx.fillStyle = gunGlow;
-        ctx.beginPath();
-        ctx.arc(s * 0.4, -s * 0.1, s * 0.12, 0, Math.PI * 2);
-        ctx.fill();
-        // Tip dot pulsing
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = 0.6 + Math.sin(time * 10) * 0.4;
-        ctx.beginPath();
-        ctx.arc(s * 0.4, -s * 0.1, s * 0.035, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        break;
-      }
-      case 'sword': {
-        // Energy sword — wide glowing blade
-        const swordAngle = -0.6 + Math.sin(time * 3) * 0.15;
-        ctx.save();
-        ctx.rotate(swordAngle);
-        // Hilt
-        ctx.fillStyle = '#1a2845';
-        ctx.strokeStyle = this.color + '88';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(-s * 0.045, -s * 0.04, s * 0.09, s * 0.14, 2);
-        ctx.fill();
-        ctx.stroke();
-        // Cross-guard
-        ctx.fillStyle = this.color + '66';
-        ctx.beginPath();
-        ctx.roundRect(-s * 0.12, -s * 0.05, s * 0.24, s * 0.035, 2);
-        ctx.fill();
-        // Blade — wide and bright
-        const bladeLen = s * 0.65;
-        const bladeGrad = ctx.createLinearGradient(0, -s * 0.05, 0, -s * 0.05 - bladeLen);
-        bladeGrad.addColorStop(0, this.color + 'ee');
-        bladeGrad.addColorStop(0.5, this.color + 'aa');
-        bladeGrad.addColorStop(1, this.color + '44');
-        ctx.fillStyle = bladeGrad;
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.05, -s * 0.05);
-        ctx.lineTo(s * 0.05, -s * 0.05);
-        ctx.lineTo(s * 0.015, -s * 0.05 - bladeLen);
-        ctx.lineTo(-s * 0.015, -s * 0.05 - bladeLen);
-        ctx.closePath();
-        ctx.fill();
-        // Blade edge glow
-        ctx.strokeStyle = this.color;
-        ctx.globalAlpha = 0.6;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.05, -s * 0.05);
-        ctx.lineTo(-s * 0.015, -s * 0.05 - bladeLen);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(s * 0.05, -s * 0.05);
-        ctx.lineTo(s * 0.015, -s * 0.05 - bladeLen);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-        // Glow aura
-        const auraGrad = ctx.createLinearGradient(0, -s * 0.05, 0, -s * 0.05 - bladeLen);
-        auraGrad.addColorStop(0, this.color + '44');
-        auraGrad.addColorStop(1, 'transparent');
-        ctx.fillStyle = auraGrad;
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.1, -s * 0.05);
-        ctx.lineTo(s * 0.1, -s * 0.05);
-        ctx.lineTo(s * 0.025, -s * 0.05 - bladeLen);
-        ctx.lineTo(-s * 0.025, -s * 0.05 - bladeLen);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-        break;
-      }
-      case 'shield': {
-        // Energy shield — large glowing arc barrier
-        ctx.save();
-        ctx.translate(s * 0.1, -s * 0.05);
-        const shieldPulse = 0.8 + Math.sin(time * 4) * 0.15;
-        const shieldR = s * 0.5;
-        // Shield fill
-        const shieldGrad = ctx.createRadialGradient(0, 0, s * 0.1, 0, 0, shieldR);
-        shieldGrad.addColorStop(0, this.color + '18');
-        shieldGrad.addColorStop(0.6, this.color + '30');
-        shieldGrad.addColorStop(1, this.color + '08');
-        ctx.fillStyle = shieldGrad;
-        ctx.globalAlpha = shieldPulse;
-        ctx.beginPath();
-        ctx.arc(0, 0, shieldR, -Math.PI * 0.65, Math.PI * 0.65);
-        ctx.lineTo(0, 0);
-        ctx.closePath();
-        ctx.fill();
-        // Shield edge — bright
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2;
-        ctx.globalAlpha = shieldPulse * 0.9;
-        ctx.beginPath();
-        ctx.arc(0, 0, shieldR, -Math.PI * 0.65, Math.PI * 0.65);
-        ctx.stroke();
-        // Inner rings
-        ctx.lineWidth = 0.8;
-        ctx.globalAlpha = 0.25;
-        for (let i = 0; i < 3; i++) {
-          const hr = s * 0.15 + i * s * 0.12;
-          ctx.beginPath();
-          ctx.arc(0, 0, hr, -Math.PI * 0.55, Math.PI * 0.55);
-          ctx.stroke();
-        }
-        // Center hex
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = 0.3;
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const a = (i / 6) * Math.PI * 2;
-          const hx = Math.cos(a) * s * 0.08;
-          const hy = Math.sin(a) * s * 0.08;
-          i === 0 ? ctx.moveTo(hx, hy) : ctx.lineTo(hx, hy);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.restore();
-        break;
-      }
+    // Aim angle — point toward bug if chasing
+    let aimAngle = -0.2;
+    if (this.chasingBug) {
+      const dx = (this.chasingBug.x - this.x) * this.facing;
+      const dy = this.chasingBug.y - (this.y + this.bobY);
+      aimAngle = Math.atan2(dy, Math.abs(dx));
     }
+    ctx.rotate(aimAngle);
+
+    // Recoil kick
+    const recoil = this.surprise > 0 ? Math.sin(this.surprise * Math.PI * 6) * s * 0.04 : 0;
+    ctx.translate(-recoil, 0);
+
+    // Gun body — dark metal block
+    const gunLen = s * 0.45;
+    const gunH = s * 0.09;
+    ctx.fillStyle = '#151d30';
+    ctx.beginPath();
+    ctx.roundRect(-s * 0.06, -gunH / 2, gunLen, gunH, 2);
+    ctx.fill();
+
+    // Gun outline
+    ctx.strokeStyle = this.color + '55';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Barrel — extending from gun body
+    ctx.strokeStyle = this.color + '88';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(gunLen - s * 0.06, 0);
+    ctx.lineTo(gunLen + s * 0.08, 0);
+    ctx.stroke();
+
+    // Grip (handle below)
+    ctx.fillStyle = '#0d1420';
+    ctx.beginPath();
+    ctx.roundRect(s * 0.02, gunH / 2, s * 0.06, s * 0.08, 1);
+    ctx.fill();
+
+    // Side detail line
+    ctx.strokeStyle = this.color + '33';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(s * 0.04, -gunH / 2 + 1);
+    ctx.lineTo(gunLen - s * 0.1, -gunH / 2 + 1);
+    ctx.stroke();
+
+    // Barrel tip glow — pulsing energy
+    const tipX = gunLen + s * 0.08;
+    const tipGlow = ctx.createRadialGradient(tipX, 0, 0, tipX, 0, s * 0.1);
+    tipGlow.addColorStop(0, this.color + 'bb');
+    tipGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = tipGlow;
+    ctx.beginPath();
+    ctx.arc(tipX, 0, s * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pulsing tip dot
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = 0.6 + Math.sin(time * 10) * 0.4;
+    ctx.beginPath();
+    ctx.arc(tipX, 0, s * 0.03, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Scope dot (top of gun)
+    ctx.fillStyle = '#ff3333';
+    ctx.globalAlpha = 0.5 + Math.sin(time * 8) * 0.3;
+    ctx.beginPath();
+    ctx.arc(s * 0.15, -gunH / 2 - 1.5, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
     ctx.restore();
   }
 

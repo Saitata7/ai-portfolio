@@ -16,7 +16,7 @@ export default function About() {
         <div className="section-label">{about.label}</div>
         <h2 className="section-title whitespace-pre-line">{about.title}</h2>
         <p className="section-desc">{about.description}</p>
-        <p className="text-[15px] text-[#4a5470] leading-[1.7]">{about.stats}</p>
+        <p className="text-sm sm:text-[15px] text-[#4a5470] leading-[1.7]">{about.stats}</p>
       </motion.div>
     </section>
   );

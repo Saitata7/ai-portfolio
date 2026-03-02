@@ -45,13 +45,15 @@ const portfolioData = {
         description:
           'Local-first Chrome extension that optimizes resumes for specific job descriptions with ATS scoring. All data stays private on your machine.',
         tags: ['React', 'TypeScript', 'Chrome Extension', 'IndexedDB'],
+        link: 'https://github.com/Saitata7/apply-sharp',
       },
       {
         icon: '\uD83D\uDEE0\uFE0F',
         title: 'SaaSCode Kit — AI Dev Toolkit',
         description:
-          'Published npm toolkit for AI agents building SaaS apps. Includes code generation, AST-based review, CI/CD automation, and IDE context files.',
-        tags: ['TypeScript', 'AST Analysis', 'Semgrep', 'npm', 'CLI'],
+          'Published npm toolkit that gives AI coding agents (Claude Code, Cursor, Windsurf) full project context via a single manifest. AST-based code review with ts-morph, 17-category file validation, endpoint parity checking, pre-commit/pre-push gates, and auto-generated IDE context files.',
+        tags: ['TypeScript', 'ts-morph', 'Semgrep', 'npm', 'GitHub Actions'],
+        link: 'https://github.com/Saitata7/saascode-kit',
       },
       {
         icon: '\uD83D\uDCDE',
@@ -59,6 +61,7 @@ const portfolioData = {
         description:
           'Intelligent IVR for credit card contact centers using Amazon Lex NLU, with customer validation, language selection, and smart queue routing.',
         tags: ['Amazon Connect', 'Lex', 'Lambda', 'DynamoDB'],
+        link: 'https://github.com/Saitata7/Flow-app-aws-connect',
       },
     ],
   },

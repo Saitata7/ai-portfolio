@@ -83,6 +83,12 @@
   }
 }
 
+@media (max-width: 480px) {
+  .page-section {
+    padding: 60px 16px;
+  }
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;

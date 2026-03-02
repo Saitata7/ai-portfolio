@@ -29,7 +29,7 @@ export default function Skills() {
           <motion.div
             key={skill}
             variants={fadeUp}
-            className="py-3 px-6 bg-[rgba(12,17,30,0.7)] border border-white/5 rounded-[10px] font-mono text-[13px] text-text-dim transition-all hover:border-cyan hover:text-cyan hover:-translate-y-1 hover:shadow-[0_0_20px_rgba(0,240,255,0.2)]"
+            className="py-2 px-4 sm:py-3 sm:px-6 bg-[rgba(12,17,30,0.7)] border border-white/5 rounded-[10px] font-mono text-[11px] sm:text-[13px] text-text-dim transition-all hover:border-cyan hover:text-cyan hover:-translate-y-1 hover:shadow-[0_0_20px_rgba(0,240,255,0.2)]"
           >
             {skill}
           </motion.div>

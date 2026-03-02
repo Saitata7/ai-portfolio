@@ -35,6 +35,7 @@ src/
 │   │   ├── Bug.js                    # Bug entity: scatter/flee/zapped/return
 │   │   └── ZapBeam.js               # Energy beam effect
 │   └── systems/
+│       ├── AmbientTheme.js           # Time-of-day sky, stars, moon, clouds, rain
 │       ├── BugFightSystem.js         # Bug waves, agent-bug assignment, containment
 │       └── WorkstationThemes.js      # 6 themed draw functions + canvas icons
 ├── components/
@@ -50,7 +51,8 @@ src/
 ├── data/
 │   └── portfolioData.js              # All portfolio content (no company names)
 └── utils/
-    └── motion.js                     # Framer Motion presets (fadeUp, heroFade, etc.)
+    ├── motion.js                     # Framer Motion presets (fadeUp, heroFade, etc.)
+    └── responsive.js                 # Breakpoint tiers + touch detection
 ```
 
 ### Canvas System (World.js)
@@ -59,6 +61,8 @@ src/
 - **DPR handling**: `ctx.setTransform(dpr,...)`, cached `canvasRect` for mouse coords
 - **Frame-rate independent**: All movement is `pixels/second * dt`
 - **Resize**: `_initLayout()` (first time) vs `_updateLayout()` (preserves agents)
+- **Responsive layout tiers**: `getLayoutTier(W)` → xs/sm/md/lg controls grid, agent count, sizes
+- **Ambient theme**: `AmbientTheme` draws sky/stars/moon/clouds/rain behind everything
 
 ### 6 Workstations (SECTION_DEFS)
 | Station | Color | Maps to |
@@ -78,8 +82,32 @@ Plus: `NAV_WALKING`, `NAV_ARRIVED`, `BUG_CHASE`
 - Click Security Vault → bugs escape → spread toward workstations
 - Agents get weapons (beam/sword/shield) and chase bugs
 - ZapBeam connects agent antenna to bug
-- 4 waves, 3.5s intervals, 16s auto-end
+- Tier-scaled: xs=2 waves/6 bugs, sm=3/10, lg=4/14. 16s auto-end.
 - Click elsewhere to seal vault early
+
+### Responsive Layout
+| Tier | Width | Grid | Agents | Node Size |
+|---|---|---|---|---|
+| xs | < 480px | 2×3 | 6 (1/node, size 18) | 90×56 |
+| sm | < 768px | 2×3 | 12 (2/node, size 22) | 100×62 |
+| md | < 1024px | 3×2 | 12 (2/node, size 28) | 110×70 |
+| lg | 1024px+ | 3×2 | 12 (2/node, size 28) | 130×80 |
+
+- Tier changes on resize → full `_initLayout()` rebuild
+- Touch: `onTouchEnd` on canvas, `touch-none` CSS, CustomCursor hidden on touch devices
+- StatusBar/content sections use `sm:` responsive Tailwind prefixes
+
+### Ambient Theme (AmbientTheme.js)
+- Reads local time every 10s (`hours + minutes/60` = fractional hour for smooth positioning)
+- **Sun arc**: rises 6am (left horizon) → peaks noon (top center) → sets 6pm (right horizon). Parabolic arc via `sin(t * PI)`. Warm orange glow near horizon, white-yellow when high. Multiple glow layers for visibility.
+- **Moon arc**: rises ~7pm (left) → peaks ~midnight (top) → sets ~5am (right). Crescent shadow from `moonPhase`. Silvery glow + crater details.
+- **Stars**: 80 twinkling, fade in continuously as `nightStrength` increases (not discrete). Visible from dusk.
+- **Sky gradient**: smooth blended transitions (sunrise 6-9, day 9-17, sunset 17-20, night 20-6) using RGBA lerp
+- **Clouds**: 5 drifting clusters, color-tinted per period
+- **Rain**: random cycle (dry 60-180s, rain 15-30s), fades in/out
+- Draw order: clearRect → sky → stars → sun → moon → clouds → rain → grid/dots → rest
+- Grid/dot colors subtly tinted per period
+- Agents work 24/7 — the moving sky proves it
 
 ## Tailwind Theme
 - **Colors**: cyan, purple, pink, green, orange, blue, deep (#030508), dark (#06080d)
@@ -91,6 +119,8 @@ Plus: `NAV_WALKING`, `NAV_ARRIVED`, `BUG_CHASE`
 - **Empty useEffect deps**: Canvas runs once, never restarts on re-render
 - **No company names** in portfolio data — generic role descriptions only
 - **Canvas icons** replace emojis (drawMicIcon, drawEyeIcon, etc. in WorkstationThemes.js)
+- **Touch-first mobile**: `isTouchDevice()` hides cursor, `onTouchEnd` handles canvas taps
+- **Responsive breakpoints**: xs < 480, sm < 768, md < 1024, lg 1024+
 
 ## Portfolio Data
 All content in `src/data/portfolioData.js`. Real projects: Voycee (Voice AI), n8n Agent, ApplySharp, SaaSCode Kit, AWS Connect IVR.

@@ -64,8 +64,15 @@ export default function HeroCanvas({ onStatusChange, onNavigate }) {
     >
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full cursor-pointer"
+        className="absolute inset-0 w-full h-full cursor-pointer touch-none"
         onClick={handleCanvasClick}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          const t = e.changedTouches[0];
+          const rect = canvasRef.current?.getBoundingClientRect();
+          if (!rect || !t) return;
+          worldRef.current?.handleClick(t.clientX - rect.left, t.clientY - rect.top);
+        }}
       />
 
       {/* ── Hero overlay text — top-left, out of workspace ── */}

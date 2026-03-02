@@ -7,6 +7,8 @@ import Agent from './entities/Agent.js';
 import Bug from './entities/Bug.js';
 import { drawWorkstationTheme, drawWorkstationIcon } from './systems/WorkstationThemes.js';
 import BugFightSystem from './systems/BugFightSystem.js';
+import AmbientTheme from './systems/AmbientTheme.js';
+import { getLayoutTier } from '../utils/responsive.js';
 
 export const SECTION_DEFS = [
   { label: 'VOICE & NLP',        navQ: 'Where is About Me?',     icon: '🎙️', color: '#00f0ff', section: 'sec-about',      backLabel: 'ABOUT ME',     backDesc: 'My story & expertise' },
@@ -49,6 +51,12 @@ export default class World {
     this.bugFightSystem = new BugFightSystem(this);
     this.bugZoneShake = 0;
     this.bugZoneHintShown = false;
+
+    // Responsive
+    this.layoutTier = 'lg';
+
+    // Ambient theme
+    this.ambientTheme = new AmbientTheme();
 
     // Transition / navigation
     this.trans = 0;       // 0 = working, 1 = watching (visual dim)
@@ -144,17 +152,27 @@ export default class World {
   /* ─── LAYOUT ─── */
 
   _buildNodes(W, H) {
-    const cols = 3, rows = 2;
-    const gx = Math.min(280, (W - 220) / cols);
-    const gy = Math.min(200, (H - 280) / rows);
+    const t = this.layoutTier;
+    let cols, rows, nodeW, nodeH;
+    if (t === 'xs')      { cols = 2; rows = 3; nodeW = 90;  nodeH = 56; }
+    else if (t === 'sm') { cols = 2; rows = 3; nodeW = 100; nodeH = 62; }
+    else if (t === 'md') { cols = 3; rows = 2; nodeW = 110; nodeH = 70; }
+    else                 { cols = 3; rows = 2; nodeW = 130; nodeH = 80; }
+
+    const marginX = t === 'xs' ? 80 : t === 'sm' ? 120 : 220;
+    const marginY = t === 'xs' ? 200 : t === 'sm' ? 220 : 280;
+    const maxGx = t === 'xs' ? 160 : t === 'sm' ? 200 : 280;
+    const maxGy = t === 'xs' ? 130 : t === 'sm' ? 150 : 200;
+    const gx = Math.min(maxGx, (W - marginX) / cols);
+    const gy = Math.min(maxGy, (H - marginY) / rows);
     const sx = (W - gx * (cols - 1)) / 2;
     const sy = (H - gy * (rows - 1)) / 2 + 10;
 
     return SECTION_DEFS.map((sd, i) => ({
       x: sx + (i % cols) * gx,
       y: sy + Math.floor(i / cols) * gy,
-      w: 130,
-      h: 80,
+      w: nodeW,
+      h: nodeH,
       ...sd,
       progress: Math.random(),
       pSpeed: 0.003 + Math.random() * 0.005,
@@ -167,14 +185,20 @@ export default class World {
     this.nodes = this._buildNodes(W, H);
     this.conns = CONN_DEFS.map(([a, b]) => ({ from: a, to: b }));
 
+    const t = this.layoutTier;
+    const agentsPerNode = t === 'xs' ? 1 : 2;
+    const agentSize = t === 'xs' ? 18 : t === 'sm' ? 22 : 28;
+
     this.agents = [];
     for (let i = 0; i < this.nodes.length; i++) {
-      this.agents.push(new Agent(i, 0, this.nodes));
-      this.agents.push(new Agent(i, 1, this.nodes));
+      for (let j = 0; j < agentsPerNode; j++) {
+        this.agents.push(new Agent(i, j, this.nodes, agentSize));
+      }
     }
 
+    const dotCount = t === 'xs' ? 20 : t === 'sm' ? 35 : 60;
     this.bgDots = [];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < dotCount; i++) {
       this.bgDots.push({
         x: Math.random() * W,
         y: Math.random() * H,
@@ -214,8 +238,9 @@ export default class World {
         const dy = newNode.y - oldNode.y;
         a.x += dx;
         a.y += dy;
-        a.homeX = newNode.x + (a.id === 0 ? -35 : 35);
-        a.homeY = newNode.y + newNode.h / 2 + 40;
+        const off = newNode.w * 0.27;
+        a.homeX = newNode.x + (a.id === 0 ? -off : off);
+        a.homeY = newNode.y + newNode.h / 2 + (this.layoutTier === 'xs' ? 28 : 40);
         a.targetX += dx;
         a.targetY += dy;
       }
@@ -232,10 +257,14 @@ export default class World {
   }
 
   _initBugZone(W, H) {
-    const zw = 90, zh = 60;
+    const t = this.layoutTier;
+    const zw = t === 'xs' ? 60 : t === 'sm' ? 75 : 90;
+    const zh = t === 'xs' ? 40 : t === 'sm' ? 50 : 60;
+    const mr = t === 'xs' ? 10 : 30;
+    const mb = t === 'xs' ? 50 : 80;
     this.bugZone = {
-      x: W - zw - 30,
-      y: H - zh - 80,
+      x: W - zw - mr,
+      y: H - zh - mb,
       w: zw,
       h: zh,
       lidOpen: 0,
@@ -252,7 +281,8 @@ export default class World {
     if (this.bugs.length === 0 && !this.bugFightActive) {
       const cx = this.bugZone.x + zw / 2;
       const cy = this.bugZone.y + zh / 2;
-      for (let i = 0; i < 4; i++) {
+      const seedCount = t === 'xs' ? 2 : 4;
+      for (let i = 0; i < seedCount; i++) {
         const b = new Bug(
           cx + (Math.random() - 0.5) * zw * 0.6,
           cy + (Math.random() - 0.5) * zh * 0.4,
@@ -282,7 +312,11 @@ export default class World {
     this.H = H;
     this.canvasRect = rect;
 
+    const oldTier = this.layoutTier;
+    this.layoutTier = getLayoutTier(W);
+
     if (this.agents.length === 0) this._initLayout(W, H);
+    else if (oldTier !== this.layoutTier) this._initLayout(W, H);
     else this._updateLayout(W, H);
   }
 
@@ -336,7 +370,7 @@ export default class World {
         this.bugZoneHintShown = true;
         this.bugs = [];
         this.dispatch('BUG_BREACH');
-        this.bugFightSystem.spawnBugs(7);
+        this.bugFightSystem.spawnBugs(this.layoutTier === 'xs' ? 3 : 7);
       }
       return;
     }
@@ -371,6 +405,10 @@ export default class World {
 
     // Clear
     this.ctx.clearRect(0, 0, this.W, this.H);
+
+    // Ambient theme (behind everything)
+    this.ambientTheme.update(dt);
+    this.ambientTheme.draw(this.ctx, this.W, this.H, this.time);
 
     // Bug fight system update
     this.bugFightSystem.update(dt);
@@ -440,19 +478,33 @@ export default class World {
   _drawBG() {
     const { W, H, bgDots, ctx } = this;
     const dotSpeed = this.gState === 'watching' ? 0.2 : 1;
+    const period = this.ambientTheme.period;
+    const gridInterval = this.layoutTier === 'xs' ? 80 : 60;
 
-    // Grid
-    ctx.strokeStyle = 'rgba(0,240,255,0.015)';
+    // Period-aware grid tint
+    const gridColors = {
+      morning:   'rgba(255,200,150,0.012)',
+      afternoon: 'rgba(0,240,255,0.015)',
+      evening:   'rgba(255,150,100,0.012)',
+      night:     'rgba(100,150,255,0.015)',
+    };
+    ctx.strokeStyle = gridColors[period] || gridColors.afternoon;
     ctx.lineWidth = 0.5;
-    for (let x = 0; x < W; x += 60) {
+    for (let x = 0; x < W; x += gridInterval) {
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
     }
-    for (let y = 0; y < H; y += 60) {
+    for (let y = 0; y < H; y += gridInterval) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
 
     // Floating dots — batched into single path
-    ctx.fillStyle = 'rgba(0,240,255,0.05)';
+    const dotColors = {
+      morning:   'rgba(255,200,150,0.04)',
+      afternoon: 'rgba(0,240,255,0.05)',
+      evening:   'rgba(255,150,100,0.04)',
+      night:     'rgba(100,160,255,0.05)',
+    };
+    ctx.fillStyle = dotColors[period] || dotColors.afternoon;
     ctx.beginPath();
     bgDots.forEach(p => {
       p.x += p.vx * dotSpeed;
@@ -560,19 +612,22 @@ export default class World {
 
       if (showBack) {
         // ── Back face — section info ──
-        ctx.font = "bold 13px 'JetBrains Mono',monospace";
+        const backLabelSz = Math.max(9, Math.round(n.w * 0.1));
+        ctx.font = `bold ${backLabelSz}px 'JetBrains Mono',monospace`;
         ctx.fillStyle = n.color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(n.backLabel, 0, -10);
 
-        ctx.font = "9px 'Outfit',sans-serif";
+        const backDescSz = Math.max(7, Math.round(n.w * 0.07));
+        ctx.font = `${backDescSz}px 'Outfit',sans-serif`;
         ctx.fillStyle = '#6a7490';
         ctx.fillText(n.backDesc, 0, 6);
 
         // "Click to go" prompt — pulsing
         if (gState === 'nav_waiting_click') {
-          ctx.font = "bold 8px 'JetBrains Mono',monospace";
+          const clickSz = Math.max(7, Math.round(n.w * 0.06));
+          ctx.font = `bold ${clickSz}px 'JetBrains Mono',monospace`;
           ctx.fillStyle = n.color;
           ctx.globalAlpha = 0.5 + Math.sin(time * 5) * 0.4;
           ctx.fillText('▸ CLICK TO GO', 0, 24);
@@ -636,7 +691,8 @@ export default class World {
         ctx.restore();
 
         // Label — below center, bright and clear
-        ctx.font = "bold 9px 'JetBrains Mono',monospace";
+        const labelSz = Math.max(7, Math.round(n.w * 0.07));
+        ctx.font = `bold ${labelSz}px 'JetBrains Mono',monospace`;
         ctx.fillStyle = n.color;
         ctx.globalAlpha = 0.85;
         ctx.fillText(n.label, 0, n.h * 0.28);
@@ -704,7 +760,8 @@ export default class World {
     ctx.stroke();
 
     // Shield icon above vault
-    ctx.font = '16px sans-serif';
+    const shieldSz = this.layoutTier === 'xs' ? 12 : 16;
+    ctx.font = `${shieldSz}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.globalAlpha = 0.7;
@@ -712,7 +769,8 @@ export default class World {
     ctx.globalAlpha = 1;
 
     // Label
-    ctx.font = "bold 7px 'JetBrains Mono',monospace";
+    const bugLabelSz = this.layoutTier === 'xs' ? 6 : 7;
+    ctx.font = `bold ${bugLabelSz}px 'JetBrains Mono',monospace`;
     ctx.textAlign = 'center';
     if (bugFightActive) {
       const alarmAlpha = 0.5 + Math.sin(z.alarmPulse) * 0.3;

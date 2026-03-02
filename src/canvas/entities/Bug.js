@@ -18,6 +18,7 @@ export default class Bug {
     this.targetAgent = null;
     this.stunTimer = 0;
     this.life = 1; // for fade out
+    this.hitFlash = 0; // white flash when shot
     this.vaultCenter = vaultCenter;
 
     // Return path
@@ -50,6 +51,7 @@ export default class Bug {
   update(dt, time, world) {
     this.legPhase += dt * 18;
     this.glitchTimer += dt;
+    if (this.hitFlash > 0) this.hitFlash -= dt * 5;
 
     switch (this.state) {
       case 'contained':
@@ -180,7 +182,7 @@ export default class Bug {
     if (glitch) ctx.translate((Math.random() - 0.5) * 3, 0);
 
     // Body — angular hexagonal shape
-    ctx.fillStyle = this.color;
+    ctx.fillStyle = this.hitFlash > 0 ? `rgba(255,255,255,${0.7 + this.hitFlash * 0.3})` : this.color;
     ctx.globalAlpha = alpha * 0.7;
     ctx.beginPath();
     ctx.moveTo(s, 0);

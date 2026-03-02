@@ -1,24 +1,29 @@
 /* ─── BUG FIGHT SYSTEM ───
    Bugs spread across entire canvas attacking workstations.
-   Agents equip weapons and hunt them down. 10-15 second fight.
+   Agents equip guns and shoot them down. Cinematic gunfight.
    ──────────────────────── */
 
 import Bug from '../entities/Bug.js';
-import ZapBeam from '../entities/ZapBeam.js';
+import Bullet from '../entities/Bullet.js';
 import { AGENT_STATES } from '../entities/Agent.js';
 
-const ZAP_RANGE = 45;
-const MAX_BUGS = 14;
-const WAVE_INTERVAL = 3.0; // seconds between waves
-const CHASE_DELAY = 1.8; // seconds before agents start chasing (let bugs spread first)
-const WEAPON_TYPES = ['beam', 'sword', 'shield'];
+const SHOOT_RANGE = 120; // agents shoot from distance
+const CHASE_STOP_RANGE = 80; // stop chasing, start shooting
+const SHOOT_COOLDOWN = 0.45; // seconds between shots
+const WAVE_INTERVAL = 3.0;
+const CHASE_DELAY = 1.8;
+
+function getTierLimits(tier) {
+  if (tier === 'xs') return { maxBugs: 6, maxWaves: 2, perWave: 3 };
+  if (tier === 'sm') return { maxBugs: 10, maxWaves: 3, perWave: 4 };
+  return { maxBugs: 14, maxWaves: 4, perWave: 6 };
+}
 
 export default class BugFightSystem {
   constructor(world) {
     this.world = world;
     this.waveTimer = 0;
     this.wavesSpawned = 0;
-    this.maxWaves = 4; // More waves = longer fight (10-15s)
     this.fightTimer = 0;
   }
 
@@ -27,15 +32,15 @@ export default class BugFightSystem {
     if (!bugZone) return;
     const cx = bugZone.x + bugZone.w / 2;
     const cy = bugZone.y + bugZone.h / 2;
+    const { maxBugs } = getTierLimits(this.world.layoutTier);
 
-    for (let i = 0; i < count && bugs.length < MAX_BUGS; i++) {
+    for (let i = 0; i < count && bugs.length < maxBugs; i++) {
       const bug = new Bug(
         cx + (Math.random() - 0.5) * bugZone.w * 0.5,
         cy + (Math.random() - 0.5) * bugZone.h * 0.5,
         { x: cx, y: cy },
       );
 
-      // Bugs target random workstations to "attack"
       const targetNode = nodes[Math.floor(Math.random() * nodes.length)];
       bug.attackTarget = { x: targetNode.x, y: targetNode.y };
 
@@ -64,8 +69,8 @@ export default class BugFightSystem {
       if (best) {
         best.state = AGENT_STATES.BUG_CHASE;
         best.chasingBug = bug;
-        // Assign weapon type based on agent id
-        best.weaponType = WEAPON_TYPES[(best.homeNode + best.id) % WEAPON_TYPES.length];
+        best.weaponType = 'gun';
+        best.shootCooldown = 0.3; // short initial delay before first shot
         bug.targetAgent = best;
         bug.state = 'fleeing';
       }
@@ -78,32 +83,40 @@ export default class BugFightSystem {
 
     this.fightTimer += dt;
 
-    // Spawn waves — spread over time for 10-15s total
-    if (this.wavesSpawned < this.maxWaves) {
+    // Spawn waves
+    const limits = getTierLimits(world.layoutTier);
+    if (this.wavesSpawned < limits.maxWaves) {
       this.waveTimer += dt;
       if (this.waveTimer > WAVE_INTERVAL) {
-        this.spawnBugs(4 + Math.floor(Math.random() * 3));
+        this.spawnBugs(limits.perWave - 2 + Math.floor(Math.random() * 3));
         this.waveTimer = 0;
       }
     }
 
-    // Assign chasers — delay so bugs spread across canvas first
+    // Assign chasers
     if (this.fightTimer > CHASE_DELAY) {
       this.assignChasers();
     }
 
-    // Check for zap-range hits
+    // Agents chase + shoot
     for (const agent of world.agents) {
       if (agent.state !== AGENT_STATES.BUG_CHASE || !agent.chasingBug) continue;
       const bug = agent.chasingBug;
       const dist = Math.hypot(agent.x - bug.x, agent.y - bug.y);
 
-      if (dist < ZAP_RANGE && bug.state === 'fleeing') {
-        bug.state = 'being_zapped';
-        const beam = new ZapBeam(agent, bug);
-        world.beams.push(beam);
+      // Shoot cooldown
+      if (agent.shootCooldown > 0) agent.shootCooldown -= dt;
+
+      // In shoot range? Fire!
+      if (dist < SHOOT_RANGE && bug.state === 'fleeing' && agent.shootCooldown <= 0) {
+        const bullet = new Bullet(agent, bug);
+        world.beams.push(bullet);
+        agent.shootCooldown = SHOOT_COOLDOWN;
+        // Recoil kick
+        agent.surprise = 0.3;
       }
 
+      // Bug dead or returning? Release agent
       if (bug.state === 'returning' || bug.life <= 0) {
         agent.chasingBug = null;
         agent.weaponType = null;
@@ -114,21 +127,20 @@ export default class BugFightSystem {
     // Update bugs
     world.bugs.forEach(b => b.update(dt, world.time, world));
 
-    // Update beams
+    // Update bullets
     world.beams.forEach(b => b.update(dt));
 
     // Cleanup
     world.bugs = world.bugs.filter(b => b.life > 0);
     world.beams = world.beams.filter(b => b.life > 0);
 
-    // Auto-end after 15 seconds or when all bugs cleared
-    if (world.bugs.length === 0 && this.wavesSpawned >= this.maxWaves) {
+    // Auto-end
+    if (world.bugs.length === 0 && this.wavesSpawned >= limits.maxWaves) {
       this.reset();
       world.bugZone.targetLidOpen = 0;
       world.dispatch('BUG_CONTAINED');
     }
     if (this.fightTimer > 16) {
-      // Force end
       this.sealVault();
     }
   }

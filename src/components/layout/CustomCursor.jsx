@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { isTouchDevice } from '../../utils/responsive';
 
 export default function CustomCursor({ watching }) {
   const ringRef = useRef(null);
   const dotRef = useRef(null);
   const [visible, setVisible] = useState(false);
+  const [isTouch, setIsTouch] = useState(false);
+
+  useEffect(() => { setIsTouch(isTouchDevice()); }, []);
 
   useEffect(() => {
+    if (isTouch) return;
     function onMouse(e) {
       if (!visible) setVisible(true);
       if (ringRef.current) {
@@ -27,7 +32,9 @@ export default function CustomCursor({ watching }) {
       document.removeEventListener('mouseleave', onLeave);
       document.removeEventListener('mouseenter', onEnter);
     };
-  }, [visible]);
+  }, [visible, isTouch]);
+
+  if (isTouch) return null;
 
   const display = visible ? 'block' : 'none';
 

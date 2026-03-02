@@ -24,7 +24,7 @@ export default function StatusBar({ state, navLabel, bugFight }) {
 
   return (
     <div
-      className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 py-3 px-7 bg-dark/85 backdrop-blur-[20px] border border-cyan/15 rounded-full font-mono text-[13px] text-text-dim tracking-[1px] transition-all duration-400 select-none ${barClass}`}
+      className={`fixed bottom-4 sm:bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 sm:gap-3 py-2 px-4 sm:py-3 sm:px-7 bg-dark/85 backdrop-blur-[20px] border border-cyan/15 rounded-full font-mono text-[10px] sm:text-[13px] text-text-dim tracking-[0.5px] sm:tracking-[1px] transition-all duration-400 select-none max-w-[calc(100vw-2rem)] ${barClass}`}
     >
       <div className={`w-2 h-2 rounded-full ${dotClass}`} />
       <span>{text}</span>
