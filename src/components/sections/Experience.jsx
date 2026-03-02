@@ -28,7 +28,7 @@ export default function Experience() {
           <motion.div
             key={i}
             variants={fadeUp}
-            className="pl-6 border-l-2 border-[#1a2540] transition-all hover:border-cyan"
+            className="pl-6 border-l-2 border-[#1a2540] transition-all hover:border-cyan hover:shadow-[-4px_0_20px_rgba(0,240,255,0.1)]"
           >
             <div className="text-sm text-cyan font-mono mb-1">{item.role}</div>
             <h3 className="text-xl font-semibold mb-1">{item.company}</h3>

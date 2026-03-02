@@ -41,6 +41,15 @@ export default class BugFightSystem {
         { x: cx, y: cy },
       );
 
+      // Boss bug: ~20% chance, larger, tougher, darker color
+      if (Math.random() < 0.2) {
+        bug.size = 14 + Math.random() * 4;
+        bug.life = 2.5;
+        bug.hue = Math.random() * 15;
+        bug.color = `hsl(${bug.hue}, 90%, 40%)`;
+        bug.isBoss = true;
+      }
+
       const targetNode = nodes[Math.floor(Math.random() * nodes.length)];
       bug.attackTarget = { x: targetNode.x, y: targetNode.y };
 
@@ -116,8 +125,15 @@ export default class BugFightSystem {
         agent.surprise = 0.3;
       }
 
-      // Bug dead or returning? Release agent
-      if (bug.state === 'returning' || bug.life <= 0) {
+      // Bug dead? Trigger return animation instead of instant removal
+      if (bug.life <= 0 && bug.state !== 'returning') {
+        const cx = world.bugZone.x + world.bugZone.w / 2;
+        const cy = world.bugZone.y + world.bugZone.h / 2;
+        bug.startReturn(cx, cy);
+      }
+
+      // Bug returning? Release agent
+      if (bug.state === 'returning') {
         agent.chasingBug = null;
         agent.weaponType = null;
         agent.returnHome();

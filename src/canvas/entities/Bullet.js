@@ -38,8 +38,6 @@ export default class Bullet {
 
     // Trail history (last 5 positions)
     this.trail = [];
-
-    this.zIndex = 3;
   }
 
   update(dt) {

@@ -61,6 +61,7 @@
 
   .section-label {
     @apply font-mono text-[11px] text-cyan tracking-[4px] uppercase mb-4 flex items-center gap-3;
+    text-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
   }
 
   .section-label::before {
@@ -70,6 +71,7 @@
 
   .section-title {
     @apply text-[clamp(36px,5vw,64px)] font-extrabold tracking-[-2px] leading-[1.1] mb-5;
+    text-shadow: 0 0 40px rgba(0, 240, 255, 0.06);
   }
 
   .section-desc {

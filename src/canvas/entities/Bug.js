@@ -14,7 +14,6 @@ export default class Bug {
     this.legPhase = Math.random() * Math.PI * 2;
     this.wiggle = Math.random() * 100;
     this.health = 1;
-    this.zIndex = 1;
     this.targetAgent = null;
     this.stunTimer = 0;
     this.life = 1; // for fade out
@@ -30,13 +29,14 @@ export default class Bug {
     this.hue = Math.random() * 30 + 5;
     this.color = `hsl(${this.hue}, 85%, 50%)`;
     this.glitchTimer = 0;
+    this.isBoss = false;
   }
 
   escape(vaultX, vaultY) {
     this.state = 'escaping';
     const angleFromCenter = Math.atan2(this.y - vaultY, this.x - vaultX);
     this.angle = angleFromCenter + (Math.random() - 0.5) * Math.PI * 1.2;
-    this.speed = 6 + Math.random() * 4; // Fast initial burst — wide scatter
+    this.speed = 360 + Math.random() * 240; // pixels/sec — Fast initial burst
     this.wiggle = 0;
   }
 
@@ -58,8 +58,8 @@ export default class Bug {
         // Crawl actively inside vault — bugs are restless
         this.wiggle += dt * 5;
         this.angle += Math.sin(this.wiggle * 2.3) * 0.15 + Math.cos(this.wiggle * 4.1) * 0.08;
-        this.x += Math.cos(this.angle) * 0.6;
-        this.y += Math.sin(this.angle) * 0.6;
+        this.x += Math.cos(this.angle) * 36 * dt;
+        this.y += Math.sin(this.angle) * 36 * dt;
         // Keep inside vault bounds if vault center is known
         if (this.vaultCenter) {
           const dx = this.x - this.vaultCenter.x;
@@ -72,7 +72,7 @@ export default class Bug {
       case 'escaping': {
         this.wiggle += dt * 10;
         // Burst decays slowly, stays fast to reach distant workstations
-        this.speed = Math.max(3.0, this.speed - dt * 0.5);
+        this.speed = Math.max(180, this.speed - dt * 30);
         const noiseE = Math.sin(this.wiggle * 3.7) * 0.6 + Math.sin(this.wiggle * 7.3) * 0.4
           + Math.sin(this.wiggle * 1.1) * 0.3;
 
@@ -91,8 +91,8 @@ export default class Bug {
           this.angle += noiseE * dt * 4;
         }
 
-        this.x += Math.cos(this.angle) * this.speed;
-        this.y += Math.sin(this.angle) * this.speed;
+        this.x += Math.cos(this.angle) * this.speed * dt;
+        this.y += Math.sin(this.angle) * this.speed * dt;
 
         // Switch to fleeing when an agent starts chasing
         if (this.targetAgent) {
@@ -114,15 +114,15 @@ export default class Bug {
             + Math.sin(this.wiggle * 11.1) * 0.3;
           this.angle = fleeAngle + noiseF;
           // Fast fleeing with random bursts — keeps bugs moving far
-          this.speed = 2.5 + Math.sin(this.wiggle * 5) * 1.2;
+          this.speed = 150 + Math.sin(this.wiggle * 5) * 72;
         } else {
           // No chaser — wander all over the canvas
           this.wiggle += dt * 5;
           this.angle += Math.sin(this.wiggle * 2) * 0.08;
-          this.speed = 1.2;
+          this.speed = 72;
         }
-        this.x += Math.cos(this.angle) * this.speed;
-        this.y += Math.sin(this.angle) * this.speed;
+        this.x += Math.cos(this.angle) * this.speed * dt;
+        this.y += Math.sin(this.angle) * this.speed * dt;
         this._clampToCanvas(world.W, world.H);
         break;
 
@@ -150,7 +150,7 @@ export default class Bug {
         this.y = (1 - ease) * (1 - ease) * this.returnStartY
           + 2 * (1 - ease) * ease * cpY
           + ease * ease * this.vaultCenter.y;
-        this.size *= 0.995; // Shrink as returning
+        this.size *= Math.pow(0.995, dt * 60); // Shrink as returning (dt-independent)
         if (t >= 1) {
           this.life = 0; // Mark for removal
         }
@@ -176,6 +176,18 @@ export default class Bug {
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
     ctx.globalAlpha = alpha;
+
+    // Boss glow aura
+    if (this.isBoss) {
+      const pulseR = s * 1.8 + Math.sin(time * 6) * s * 0.3;
+      const bg = ctx.createRadialGradient(0, 0, s * 0.3, 0, 0, pulseR);
+      bg.addColorStop(0, `hsla(${this.hue}, 90%, 50%, ${0.25 * alpha})`);
+      bg.addColorStop(1, 'transparent');
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseR, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // Glitch effect — occasional visual tear
     const glitch = Math.sin(this.glitchTimer * 30) > 0.92;

@@ -4,15 +4,19 @@
    damping: 0 = full speed, 1 = frozen (watching state)
    ──────────────────────────────────── */
 
+// Alpha boost for day mode — decorations need to be stronger on white bg
+const _aB = (dayF) => dayF > 0.3 ? 2.2 : 1;
+
 // Voice & NLP — Radar sweep with scan dots
-function drawVoiceTheme(ctx, n, time, damping) {
+function drawVoiceTheme(ctx, n, time, damping, dayF) {
   const t = time * (1 - damping);
   const r = 18;
   const sweepAngle = (t * 2) % (Math.PI * 2);
+  const aB = _aB(dayF);
 
   // Sweep arc
   ctx.strokeStyle = n.color;
-  ctx.globalAlpha = 0.3;
+  ctx.globalAlpha = Math.min(1, 0.3 * aB);
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(0, 0, r, sweepAngle - 0.9, sweepAngle);
@@ -21,7 +25,7 @@ function drawVoiceTheme(ctx, n, time, damping) {
   // Trail gradient
   const trailGrad = ctx.createConicGradient(sweepAngle - 1.2, 0, 0);
   trailGrad.addColorStop(0, 'transparent');
-  trailGrad.addColorStop(0.15, n.color + '22');
+  trailGrad.addColorStop(0.15, n.color + (dayF > 0.3 ? '55' : '22'));
   trailGrad.addColorStop(0.2, 'transparent');
   ctx.fillStyle = trailGrad;
   ctx.beginPath();
@@ -37,7 +41,7 @@ function drawVoiceTheme(ctx, n, time, damping) {
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
     const dotAlpha = Math.max(0, 1 - Math.abs(angleDiff) / 1.2);
     ctx.fillStyle = n.color;
-    ctx.globalAlpha = dotAlpha * 0.5;
+    ctx.globalAlpha = Math.min(1, dotAlpha * 0.5 * aB);
     ctx.beginPath();
     ctx.arc(Math.cos(dotAngle) * dotR, Math.sin(dotAngle) * dotR, 1.8, 0, Math.PI * 2);
     ctx.fill();
@@ -48,7 +52,7 @@ function drawVoiceTheme(ctx, n, time, damping) {
     const waveX = 22 + i * 5;
     const waveH = 4 + Math.sin(t * 6 + i * 1.5) * 3;
     ctx.strokeStyle = n.color;
-    ctx.globalAlpha = 0.15 - i * 0.03;
+    ctx.globalAlpha = Math.min(1, (0.15 - i * 0.03) * aB);
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(waveX, -waveH);
@@ -60,8 +64,9 @@ function drawVoiceTheme(ctx, n, time, damping) {
 }
 
 // Computer Vision — Blueprint grid cells filling
-function drawVisionTheme(ctx, n, time, damping) {
+function drawVisionTheme(ctx, n, time, damping, dayF) {
   const t = time * (1 - damping);
+  const aB = _aB(dayF);
   const gridSize = 4;
   const cellW = 7;
   const cellH = 5;
@@ -77,13 +82,13 @@ function drawVisionTheme(ctx, n, time, damping) {
       const cy = startY + row * cellH;
 
       ctx.strokeStyle = n.color;
-      ctx.globalAlpha = 0.1;
+      ctx.globalAlpha = Math.min(1, 0.1 * aB);
       ctx.lineWidth = 0.5;
       ctx.strokeRect(cx, cy, cellW - 1, cellH - 1);
 
       if (idx <= fillIndex) {
         ctx.fillStyle = n.color;
-        ctx.globalAlpha = 0.15 + (idx === fillIndex ? Math.sin(t * 8) * 0.1 : 0);
+        ctx.globalAlpha = Math.min(1, (0.15 + (idx === fillIndex ? Math.sin(t * 8) * 0.1 : 0)) * aB);
         ctx.fillRect(cx + 0.5, cy + 0.5, cellW - 2, cellH - 2);
       }
     }
@@ -92,7 +97,7 @@ function drawVisionTheme(ctx, n, time, damping) {
   // Scanning line
   const scanY = startY + ((t * 2) % 1) * gridSize * cellH;
   ctx.strokeStyle = n.color;
-  ctx.globalAlpha = 0.3;
+  ctx.globalAlpha = Math.min(1, 0.3 * aB);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(startX, scanY);
@@ -103,8 +108,9 @@ function drawVisionTheme(ctx, n, time, damping) {
 }
 
 // Code & Engineering — Loading bars pulsing
-function drawCodeTheme(ctx, n, time, damping) {
+function drawCodeTheme(ctx, n, time, damping, dayF) {
   const t = time * (1 - damping);
+  const aB = _aB(dayF);
   const barW = 32;
   const barH = 3;
   const startX = -barW / 2;
@@ -114,14 +120,14 @@ function drawCodeTheme(ctx, n, time, damping) {
     const fill = 0.3 + Math.sin(t * 2.5 + i * 1.8) * 0.3 + 0.4;
 
     // Track
-    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.fillStyle = dayF > 0.3 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.03)';
     ctx.beginPath();
     ctx.roundRect(startX, y, barW, barH, 1.5);
     ctx.fill();
 
     // Fill
     ctx.fillStyle = n.color;
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = Math.min(1, 0.35 * aB);
     ctx.beginPath();
     ctx.roundRect(startX, y, barW * fill, barH, 1.5);
     ctx.fill();
@@ -129,7 +135,7 @@ function drawCodeTheme(ctx, n, time, damping) {
     // Cursor blink at end of fill
     if (i === 0) {
       ctx.fillStyle = n.color;
-      ctx.globalAlpha = Math.sin(t * 5) > 0 ? 0.6 : 0;
+      ctx.globalAlpha = Math.sin(t * 5) > 0 ? Math.min(1, 0.6 * aB) : 0;
       ctx.fillRect(startX + barW * fill + 1, y - 1, 1.5, barH + 2);
     }
   }
@@ -138,13 +144,14 @@ function drawCodeTheme(ctx, n, time, damping) {
 }
 
 // ML Training — Timeline with pulsing dots
-function drawMLTheme(ctx, n, time, damping) {
+function drawMLTheme(ctx, n, time, damping, dayF) {
   const t = time * (1 - damping);
+  const aB = _aB(dayF);
   const lineH = 26;
 
   // Vertical line
   ctx.strokeStyle = n.color;
-  ctx.globalAlpha = 0.15;
+  ctx.globalAlpha = Math.min(1, 0.15 * aB);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, -lineH / 2);
@@ -158,14 +165,14 @@ function drawMLTheme(ctx, n, time, damping) {
     const dotR = 2.5 + pulse * 0.8;
 
     ctx.fillStyle = n.color;
-    ctx.globalAlpha = 0.2 + (i === Math.floor(t * 1.5) % 3 ? 0.4 : 0);
+    ctx.globalAlpha = Math.min(1, (0.2 + (i === Math.floor(t * 1.5) % 3 ? 0.4 : 0)) * aB);
     ctx.beginPath();
     ctx.arc(0, dy, dotR, 0, Math.PI * 2);
     ctx.fill();
 
     // Horizontal ticks
     ctx.strokeStyle = n.color;
-    ctx.globalAlpha = 0.12;
+    ctx.globalAlpha = Math.min(1, 0.12 * aB);
     ctx.lineWidth = 0.8;
     ctx.beginPath();
     ctx.moveTo(-6, dy);
@@ -175,7 +182,7 @@ function drawMLTheme(ctx, n, time, damping) {
 
   // Loss curve
   ctx.strokeStyle = n.color;
-  ctx.globalAlpha = 0.2;
+  ctx.globalAlpha = Math.min(1, 0.2 * aB);
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = -15; x <= 15; x += 2) {
@@ -189,8 +196,9 @@ function drawMLTheme(ctx, n, time, damping) {
 }
 
 // Data & Analytics — Waveform bars + play button
-function drawDataTheme(ctx, n, time, damping) {
+function drawDataTheme(ctx, n, time, damping, dayF) {
   const t = time * (1 - damping);
+  const aB = _aB(dayF);
 
   // Play triangle (breathing)
   const breathe = 1 + Math.sin(t * 2) * 0.08;
@@ -198,7 +206,7 @@ function drawDataTheme(ctx, n, time, damping) {
   ctx.translate(-12, 0);
   ctx.scale(breathe, breathe);
   ctx.fillStyle = n.color;
-  ctx.globalAlpha = 0.25;
+  ctx.globalAlpha = Math.min(1, 0.25 * aB);
   ctx.beginPath();
   ctx.moveTo(-3, -5);
   ctx.lineTo(5, 0);
@@ -212,7 +220,7 @@ function drawDataTheme(ctx, n, time, damping) {
     const x = 4 + i * 5;
     const h = 4 + Math.abs(Math.sin(t * 4 + i * 1.3)) * 10;
     ctx.fillStyle = n.color;
-    ctx.globalAlpha = 0.2 + Math.abs(Math.sin(t * 3 + i)) * 0.15;
+    ctx.globalAlpha = Math.min(1, (0.2 + Math.abs(Math.sin(t * 3 + i)) * 0.15) * aB);
     ctx.beginPath();
     ctx.roundRect(x - 1, -h / 2, 2.5, h, 1);
     ctx.fill();
@@ -222,8 +230,9 @@ function drawDataTheme(ctx, n, time, damping) {
 }
 
 // Deployment & Cloud — Signal pulse rings
-function drawDeployTheme(ctx, n, time, damping) {
+function drawDeployTheme(ctx, n, time, damping, dayF) {
   const t = time * (1 - damping);
+  const aB = _aB(dayF);
 
   // Concentric expanding rings
   for (let i = 0; i < 3; i++) {
@@ -232,7 +241,7 @@ function drawDeployTheme(ctx, n, time, damping) {
     const alpha = (1 - phase) * 0.25;
 
     ctx.strokeStyle = n.color;
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = Math.min(1, alpha * aB);
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(0, -2, ringR, -Math.PI * 0.8, -Math.PI * 0.2);
@@ -241,7 +250,7 @@ function drawDeployTheme(ctx, n, time, damping) {
 
   // Cloud shape base
   ctx.fillStyle = n.color;
-  ctx.globalAlpha = 0.12;
+  ctx.globalAlpha = Math.min(1, 0.12 * aB);
   ctx.beginPath();
   ctx.arc(-5, 5, 6, Math.PI, 0);
   ctx.arc(5, 5, 6, Math.PI, 0);
@@ -250,7 +259,7 @@ function drawDeployTheme(ctx, n, time, damping) {
 
   // Upload arrow
   ctx.strokeStyle = n.color;
-  ctx.globalAlpha = 0.3;
+  ctx.globalAlpha = Math.min(1, 0.3 * aB);
   ctx.lineWidth = 1.5;
   ctx.lineCap = 'round';
   const arrowY = 2 + Math.sin(t * 3) * 2;
@@ -274,11 +283,11 @@ const THEME_MAP = {
   'DEPLOY & CLOUD': drawDeployTheme,
 };
 
-export function drawWorkstationTheme(ctx, node, time, damping) {
+export function drawWorkstationTheme(ctx, node, time, damping, dayF = 0) {
   const fn = THEME_MAP[node.label];
   if (fn) {
     ctx.save();
-    fn(ctx, node, time, damping);
+    fn(ctx, node, time, damping, dayF);
     ctx.restore();
   }
 }
@@ -436,12 +445,20 @@ const ICON_MAP = {
   'DEPLOY & CLOUD': drawRocketIcon,
 };
 
-export function drawWorkstationIcon(ctx, node) {
+export function drawWorkstationIcon(ctx, node, dayF = 0) {
   const fn = ICON_MAP[node.label];
   if (fn) {
     ctx.save();
-    ctx.globalAlpha = 0.7;
-    fn(ctx, node.color);
+    // Darken icon color in day for visibility on white boxes
+    let color = node.color;
+    if (dayF > 0.3) {
+      const r = parseInt(color.slice(1,3), 16);
+      const g = parseInt(color.slice(3,5), 16);
+      const b = parseInt(color.slice(5,7), 16);
+      color = `rgb(${Math.round(r*0.55)},${Math.round(g*0.55)},${Math.round(b*0.55)})`;
+    }
+    ctx.globalAlpha = dayF > 0.3 ? 0.9 : 0.7;
+    fn(ctx, color);
     ctx.globalAlpha = 1;
     ctx.restore();
   }

@@ -13,6 +13,13 @@ export const AGENT_STATES = {
   NAV_WALKING: 'nav_walking',
   NAV_ARRIVED: 'nav_arrived',
   BUG_CHASE: 'bug_chase',
+  // Self-heal system
+  SHOCKED: 'shocked',
+  COLLAPSED: 'collapsed',
+  BEING_HEALED: 'being_healed',
+  RECOVERING: 'recovering',
+  MEDIC_WALKING: 'medic_walking',
+  MEDIC_HEALING: 'medic_healing',
 };
 
 export default class Agent {
@@ -60,6 +67,23 @@ export default class Agent {
     this.chasingBug = null;
     this.weaponType = null; // 'gun'
     this.shootCooldown = 0;
+
+    // Theme transition (sweep beam reboot)
+    this._rebootDim = 1;
+    this._rebooting = false;
+    this._rebootT = 0;
+    this._dayF = 0;
+
+    // Self-heal system
+    this.shockTimer = 0;
+    this.collapseAngle = 0;
+    this.healProgress = 0;
+    this.recoveryTimer = 0;
+    this.isMedic = false;
+    this.healTarget = null;
+    this.shockSparks = [];
+    this._shockDim = 1;
+    this._medicTrail = null;
   }
 
   navToNode(idx, nodes) {
@@ -82,6 +106,22 @@ export default class Agent {
   update(dt, time, world) {
     const { gState, mouse, nodes, conns } = world;
 
+    // Theme sweep beam reboot (runs every frame, even when frozen)
+    const tr = world.ambientTheme?._trans;
+    if (tr?.active) {
+      const W = (world.canvas?.width || 1200) / (world.dpr || 1);
+      const sweepX = tr.progress * W * 1.2 - W * 0.1;
+      if (!this._rebooting && sweepX > this.x) {
+        this._rebooting = true;
+        this._rebootT = 0;
+      }
+    } else if (this._rebooting && this._rebootT >= 1) {
+      this._rebooting = false;
+    }
+    if (this._rebooting) {
+      this._rebootT = Math.min(1, this._rebootT + dt * 2.5);
+    }
+
     // Blink
     this.blinkTimer += dt;
     if (!this.isBlinking && this.blinkTimer > 2.5 + Math.random() * 3) {
@@ -101,11 +141,15 @@ export default class Agent {
     const wantConstrict = gState === 'watching' ? 0.3 : 0;
     this.pupilConstrict += (wantConstrict - this.pupilConstrict) * 0.1;
 
-    // Surprise "!" pop
-    if (gState === 'watching' && this.frozenYet && this.surprise < 1)
-      this.surprise = Math.min(1, this.surprise + 0.09);
-    else if (gState !== 'watching' && this.surprise > 0)
-      this.surprise = Math.max(0, this.surprise - 0.05);
+    // Surprise "!" pop (skip if in self-heal — surprise is used for defib jolts)
+    const inHealAny = [AGENT_STATES.SHOCKED, AGENT_STATES.COLLAPSED,
+      AGENT_STATES.BEING_HEALED, AGENT_STATES.RECOVERING].includes(this.state);
+    if (!inHealAny) {
+      if (gState === 'watching' && this.frozenYet && this.surprise < 1)
+        this.surprise = Math.min(1, this.surprise + 0.09);
+      else if (gState !== 'watching' && this.surprise > 0)
+        this.surprise = Math.max(0, this.surprise - 0.05);
+    }
 
     this._updateEyes(dt, gState, mouse, nodes);
 
@@ -124,8 +168,13 @@ export default class Agent {
       return; // Keep walking until freeze delay expires
     }
 
+    // Self-heal states must keep running even during watching
+    const inHealState = [AGENT_STATES.SHOCKED, AGENT_STATES.COLLAPSED,
+      AGENT_STATES.BEING_HEALED, AGENT_STATES.RECOVERING,
+      AGENT_STATES.MEDIC_WALKING, AGENT_STATES.MEDIC_HEALING].includes(this.state);
+
     // Freeze position when watching (but eyes still track)
-    if (gState === 'watching') {
+    if (gState === 'watching' && !inHealState) {
       this.bobY = Math.sin(time * 0.8 + this.id * 3) * 0.5; // Subtle weight shift
       return;
     }
@@ -139,14 +188,26 @@ export default class Agent {
   }
 
   _updateEyes(dt, gState, mouse, nodes) {
-    if (gState === 'watching') {
+    // Shocked: eyes spin rapidly
+    if (this.state === AGENT_STATES.SHOCKED) {
+      this.eyeAngle += dt * 25;
+      return;
+    }
+    // Collapsed: eyes fixed
+    if (this.state === AGENT_STATES.COLLAPSED || this.state === AGENT_STATES.BEING_HEALED) {
+      return;
+    }
+    // Medic healing: look at patient
+    if (this.state === AGENT_STATES.MEDIC_HEALING && this.healTarget) {
+      this.tEyeAngle = Math.atan2(this.healTarget.y - this.y, this.healTarget.x - this.x);
+    } else if (gState === 'watching') {
       const dx = mouse.x - this.x;
       const dy = mouse.y - this.y;
       this.tEyeAngle = Math.atan2(dy, dx);
     } else if (
       [AGENT_STATES.NAV_WALKING, AGENT_STATES.CARRYING,
        AGENT_STATES.WALK_TO_PICKUP, AGENT_STATES.WALK_HOME,
-       AGENT_STATES.BUG_CHASE].includes(this.state)
+       AGENT_STATES.BUG_CHASE, AGENT_STATES.MEDIC_WALKING].includes(this.state)
     ) {
       this.tEyeAngle = Math.atan2(
         this.targetY - this.y,
@@ -255,6 +316,38 @@ export default class Agent {
           }
         }
         break;
+
+      // ── Self-heal states ──
+      case AGENT_STATES.SHOCKED:
+        this.bobY = (Math.random() - 0.5) * 5; // violent jitter
+        break;
+
+      case AGENT_STATES.COLLAPSED:
+        this.bobY = 0;
+        break;
+
+      case AGENT_STATES.BEING_HEALED:
+        // Slight jolt during defibrillate phases (surprise > 0 means jolt happened)
+        this.bobY = this.surprise > 0.1 ? (Math.random() - 0.5) * 3 : 0;
+        if (this.surprise > 0) this.surprise = Math.max(0, this.surprise - dt * 3);
+        break;
+
+      case AGENT_STATES.RECOVERING:
+        this.bobY = Math.sin(this.recoveryTimer * 14) * (1 - Math.min(1, this.recoveryTimer)) * 3;
+        break;
+
+      case AGENT_STATES.MEDIC_WALKING:
+        this._walkTo(dt, 3.5);
+        // Store trail positions for speed effect
+        if (!this._medicTrail) this._medicTrail = [];
+        this._medicTrail.push({ x: this.x, y: this.y + this.bobY, life: 0.35 });
+        if (this._medicTrail.length > 12) this._medicTrail.shift();
+        break;
+
+      case AGENT_STATES.MEDIC_HEALING:
+        this.bobY = Math.sin(time * 5) * 1.5;
+        break;
+
     }
   }
 
@@ -277,8 +370,67 @@ export default class Agent {
 
   draw(ctx, time, world) {
     const s = this.size;
+    this._dayF = world.dayF || 0;
+
+    // ── Theme sweep beam reboot ──
+    let rebootDim = 1;
+    let rebootSlump = 0;
+    if (this._rebooting) {
+      const rt = this._rebootT;
+      if (rt < 0.25) {
+        rebootDim = 1 - rt / 0.25;
+        rebootSlump = rt / 0.25 * 3;
+      } else if (rt < 0.45) {
+        rebootDim = 0;
+        rebootSlump = 3;
+      } else if (rt < 0.6) {
+        const f = (rt - 0.45) / 0.15;
+        rebootDim = f * 2;
+        rebootSlump = 3 * (1 - f);
+      } else {
+        const f = (rt - 0.6) / 0.4;
+        rebootDim = 2 - f;
+        rebootSlump = 0;
+      }
+    }
+    this._rebootDim = rebootDim;
+
+    // ── Shock dim factor (like rebootDim but for self-heal) ──
+    let shockDim = 1;
+    if (this.state === AGENT_STATES.SHOCKED) {
+      shockDim = 0.2 + Math.random() * 0.6; // flickering
+    } else if (this.state === AGENT_STATES.COLLAPSED) {
+      shockDim = 0.05; // nearly off
+    } else if (this.state === AGENT_STATES.BEING_HEALED) {
+      shockDim = 0.05 + this.healProgress * 0.95; // gradually brighten
+    } else if (this.state === AGENT_STATES.RECOVERING) {
+      const rt2 = Math.min(1, this.recoveryTimer);
+      shockDim = rt2 < 0.3 ? 1.5 : 1; // brief flash then normal
+    }
+    this._shockDim = shockDim;
+
     ctx.save();
-    ctx.translate(this.x, this.y + this.bobY);
+    ctx.translate(this.x, this.y + this.bobY + rebootSlump);
+
+    // Shock vibration
+    if (this.state === AGENT_STATES.SHOCKED) {
+      const intensity = 3 * (1 - this.shockTimer / 0.8);
+      ctx.translate((Math.random() - 0.5) * intensity * 2, (Math.random() - 0.5) * intensity * 2);
+    }
+
+    // Collapse rotation (pivot at feet)
+    if (this.collapseAngle > 0.01) {
+      ctx.translate(0, s * 0.85);
+      ctx.rotate(this.collapseAngle * this.facing);
+      ctx.translate(0, -s * 0.85);
+    }
+
+    // Medic crouch (scale down vertically when healing)
+    const isCrouching = this.state === AGENT_STATES.MEDIC_HEALING;
+    if (isCrouching) {
+      ctx.translate(0, s * 0.15);
+      ctx.scale(1, 0.82);
+    }
 
     const sb = 1 + Math.sin(this.surprise * Math.PI) * 0.08;
     ctx.scale(this.facing, 1);
@@ -291,22 +443,34 @@ export default class Agent {
     this._drawArms(ctx, s, time);
     if (this.weaponType) this._drawWeapon(ctx, s, time);
     this._drawHead(ctx, s, time);
+    if (this.isMedic) this._drawMedicInsignia(ctx, s, time);
     this._drawSurpriseIndicator(ctx, s, time);
     this._drawCarryingIndicator(ctx, s, world.gState);
 
     ctx.restore();
   }
 
+  // Theme-aware color: snaps to light palette when dayF is high
+  _tc(dark, light) {
+    return this._dayF > 0.3 ? light : dark;
+  }
+
   _drawGlow(ctx, s, time) {
-    // Soft colored aura around the agent
+    // Soft colored aura — dims during reboot/shock, flashes white
     const pulse = 0.12 + Math.sin(time * 2.5 + this.id * 2) * 0.04;
     const glowR = s * 1.1;
+    const rd = this._rebootDim;
+    const sd = this._shockDim;
+    const dim = Math.min(rd, sd);
+    const gc = this.isMedic ? '#00ff88'
+             : rd > 1.2 || sd > 1.2 ? '#ffffff'
+             : this.color;
     const glow = ctx.createRadialGradient(0, s * 0.1, s * 0.2, 0, s * 0.1, glowR);
-    glow.addColorStop(0, this.color + '30');
-    glow.addColorStop(0.5, this.color + '12');
+    glow.addColorStop(0, gc + '30');
+    glow.addColorStop(0.5, gc + '12');
     glow.addColorStop(1, 'transparent');
     ctx.fillStyle = glow;
-    ctx.globalAlpha = pulse + (this.state === AGENT_STATES.BUG_CHASE ? 0.15 : 0);
+    ctx.globalAlpha = (pulse + (this.state === AGENT_STATES.BUG_CHASE ? 0.15 : 0)) * Math.min(dim, 1);
     ctx.beginPath();
     ctx.arc(0, s * 0.1, glowR, 0, Math.PI * 2);
     ctx.fill();
@@ -314,7 +478,7 @@ export default class Agent {
   }
 
   _drawShadow(ctx, s) {
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillStyle = this._dayF > 0.3 ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.2)';
     ctx.beginPath();
     ctx.ellipse(0, s * 0.85, s * 0.35, s * 0.06, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -324,11 +488,11 @@ export default class Agent {
     const isWalking = [
       AGENT_STATES.WALK_TO_PICKUP, AGENT_STATES.CARRYING,
       AGENT_STATES.WALK_HOME, AGENT_STATES.NAV_WALKING,
-      AGENT_STATES.BUG_CHASE,
+      AGENT_STATES.BUG_CHASE, AGENT_STATES.MEDIC_WALKING,
     ].includes(this.state);
 
     const lsw = isWalking ? Math.sin(this.walkPhase) * 0.35 : 0;
-    ctx.strokeStyle = '#15203a';
+    ctx.strokeStyle = this._tc('#15203a', '#b0bdd0');
     ctx.lineWidth = s * 0.12;
     ctx.lineCap = 'round';
 
@@ -336,23 +500,19 @@ export default class Agent {
     ctx.save();
     ctx.translate(-s * 0.14, s * 0.42);
     ctx.rotate(lsw);
-    // Thigh
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(0, s * 0.2);
     ctx.stroke();
-    // Knee joint
     ctx.fillStyle = this.color + '33';
     ctx.beginPath();
     ctx.arc(0, s * 0.2, s * 0.04, 0, Math.PI * 2);
     ctx.fill();
-    // Shin
     ctx.beginPath();
     ctx.moveTo(0, s * 0.2);
     ctx.lineTo(0, s * 0.42);
     ctx.stroke();
-    // Foot — rectangular
-    ctx.fillStyle = '#1a2845';
+    ctx.fillStyle = this._tc('#1a2845', '#98a8c0');
     ctx.beginPath();
     ctx.roundRect(-s * 0.06, s * 0.4, s * 0.12, s * 0.05, 2);
     ctx.fill();
@@ -374,7 +534,7 @@ export default class Agent {
     ctx.moveTo(0, s * 0.2);
     ctx.lineTo(0, s * 0.42);
     ctx.stroke();
-    ctx.fillStyle = '#1a2845';
+    ctx.fillStyle = this._tc('#1a2845', '#98a8c0');
     ctx.beginPath();
     ctx.roundRect(-s * 0.06, s * 0.4, s * 0.12, s * 0.05, 2);
     ctx.fill();
@@ -398,8 +558,8 @@ export default class Agent {
     const bg = ctx.createLinearGradient(
       -shoulderW / 2, torsoTop, shoulderW / 2, torsoTop + torsoH,
     );
-    bg.addColorStop(0, '#1a2540');
-    bg.addColorStop(1, '#0f1828');
+    bg.addColorStop(0, this._tc('#1a2540', '#b8c8e0'));
+    bg.addColorStop(1, this._tc('#0f1828', '#c0cce0'));
     ctx.fillStyle = bg;
     ctx.fill();
     ctx.strokeStyle = this.color + '44';
@@ -422,20 +582,22 @@ export default class Agent {
     ctx.lineTo(waistW / 2 + 2, torsoTop + torsoH - 1);
     ctx.stroke();
 
-    // Chest glow core
-    const cp = 0.35 + Math.sin(time * 3 + this.id) * 0.2;
+    // Chest glow core — dims during reboot or shock
+    const rd = Math.min(this._rebootDim, this._shockDim);
+    const cp = (0.35 + Math.sin(time * 3 + this.id) * 0.2) * Math.min(rd, 1);
     const glowR = s * 0.065;
     const coreY = torsoTop + torsoH * 0.25;
-    // Glow via radial gradient (cheaper than shadowBlur)
     const coreGlow = ctx.createRadialGradient(0, coreY, glowR * 0.3, 0, coreY, glowR * 3);
-    coreGlow.addColorStop(0, this.color + '66');
+    // Flash white when rebootDim > 1 (the flash phase)
+    const coreColor = rd > 1.2 ? '#ffffff' : this.color;
+    coreGlow.addColorStop(0, coreColor + '66');
     coreGlow.addColorStop(1, 'transparent');
     ctx.fillStyle = coreGlow;
+    ctx.globalAlpha = Math.min(rd, 1);
     ctx.beginPath();
     ctx.arc(0, coreY, glowR * 3, 0, Math.PI * 2);
     ctx.fill();
-    // Core dot
-    ctx.fillStyle = this.color;
+    ctx.fillStyle = coreColor;
     ctx.globalAlpha = cp;
     ctx.beginPath();
     ctx.arc(0, coreY, glowR, 0, Math.PI * 2);
@@ -443,7 +605,7 @@ export default class Agent {
     ctx.globalAlpha = 1;
 
     // Shoulder pads
-    ctx.fillStyle = '#1e2d50';
+    ctx.fillStyle = this._tc('#1e2d50', '#a0b0c8');
     ctx.strokeStyle = this.color + '33';
     ctx.lineWidth = 0.8;
     [-1, 1].forEach(side => {
@@ -462,7 +624,7 @@ export default class Agent {
     const isWalking = [
       AGENT_STATES.WALK_TO_PICKUP, AGENT_STATES.CARRYING,
       AGENT_STATES.WALK_HOME, AGENT_STATES.NAV_WALKING,
-      AGENT_STATES.BUG_CHASE,
+      AGENT_STATES.BUG_CHASE, AGENT_STATES.MEDIC_WALKING,
     ].includes(this.state);
 
     const asw = isWalking
@@ -475,26 +637,22 @@ export default class Agent {
     ctx.save();
     ctx.translate(-s * 0.3, shoulderY);
     ctx.rotate(-0.1 + asw);
-    ctx.strokeStyle = '#15203a';
+    ctx.strokeStyle = this._tc('#15203a', '#b0bdd0');
     ctx.lineWidth = s * 0.1;
     ctx.lineCap = 'round';
-    // Upper arm
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(-s * 0.05, s * 0.22);
     ctx.stroke();
-    // Elbow joint
     ctx.fillStyle = this.color + '33';
     ctx.beginPath();
     ctx.arc(-s * 0.05, s * 0.22, s * 0.035, 0, Math.PI * 2);
     ctx.fill();
-    // Forearm
     ctx.beginPath();
     ctx.moveTo(-s * 0.05, s * 0.22);
     ctx.lineTo(-s * 0.02, s * 0.38);
     ctx.stroke();
-    // Hand
-    ctx.fillStyle = '#1e2d50';
+    ctx.fillStyle = this._tc('#1e2d50', '#a0b0c8');
     ctx.beginPath();
     ctx.arc(-s * 0.02, s * 0.4, s * 0.05, 0, Math.PI * 2);
     ctx.fill();
@@ -505,7 +663,7 @@ export default class Agent {
     ctx.save();
     ctx.translate(s * 0.3, shoulderY);
     ctx.rotate(0.1 + cAsw);
-    ctx.strokeStyle = '#15203a';
+    ctx.strokeStyle = this._tc('#15203a', '#b0bdd0');
     ctx.lineWidth = s * 0.1;
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -520,7 +678,7 @@ export default class Agent {
     ctx.moveTo(s * 0.05, s * 0.22);
     ctx.lineTo(s * 0.02, s * 0.38);
     ctx.stroke();
-    ctx.fillStyle = '#1e2d50';
+    ctx.fillStyle = this._tc('#1e2d50', '#a0b0c8');
     ctx.beginPath();
     ctx.arc(s * 0.02, s * 0.4, s * 0.05, 0, Math.PI * 2);
     ctx.fill();
@@ -550,10 +708,10 @@ export default class Agent {
     const recoil = this.surprise > 0 ? Math.sin(this.surprise * Math.PI * 6) * s * 0.04 : 0;
     ctx.translate(-recoil, 0);
 
-    // Gun body — dark metal block
+    // Gun body — metal block
     const gunLen = s * 0.45;
     const gunH = s * 0.09;
-    ctx.fillStyle = '#151d30';
+    ctx.fillStyle = this._tc('#151d30', '#a0b0c8');
     ctx.beginPath();
     ctx.roundRect(-s * 0.06, -gunH / 2, gunLen, gunH, 2);
     ctx.fill();
@@ -573,7 +731,7 @@ export default class Agent {
     ctx.stroke();
 
     // Grip (handle below)
-    ctx.fillStyle = '#0d1420';
+    ctx.fillStyle = this._tc('#0d1420', '#90a0b8');
     ctx.beginPath();
     ctx.roundRect(s * 0.02, gunH / 2, s * 0.06, s * 0.08, 1);
     ctx.fill();
@@ -669,7 +827,7 @@ export default class Agent {
     const isWalking = [
       AGENT_STATES.WALK_TO_PICKUP, AGENT_STATES.CARRYING,
       AGENT_STATES.WALK_HOME, AGENT_STATES.NAV_WALKING,
-      AGENT_STATES.BUG_CHASE,
+      AGENT_STATES.BUG_CHASE, AGENT_STATES.MEDIC_WALKING,
     ].includes(this.state);
 
     // Head tilt toward eye target
@@ -679,7 +837,7 @@ export default class Agent {
     ctx.translate(htx, hty);
 
     // Neck
-    ctx.fillStyle = '#15203a';
+    ctx.fillStyle = this._tc('#15203a', '#b0bdd0');
     ctx.beginPath();
     ctx.roundRect(-s * 0.07, -s * 0.18, s * 0.14, s * 0.1, 2);
     ctx.fill();
@@ -690,8 +848,8 @@ export default class Agent {
     const headTop = -s * 0.7;
 
     const hg = ctx.createLinearGradient(-headW / 2, headTop, headW / 2, headTop + headH);
-    hg.addColorStop(0, '#1e2d50');
-    hg.addColorStop(1, '#141f38');
+    hg.addColorStop(0, this._tc('#1e2d50', '#a0b0c8'));
+    hg.addColorStop(1, this._tc('#141f38', '#a8b8d0'));
     ctx.fillStyle = hg;
     ctx.beginPath();
     ctx.roundRect(-headW / 2, headTop, headW, headH, [s * 0.15, s * 0.15, s * 0.06, s * 0.06]);
@@ -701,17 +859,23 @@ export default class Agent {
     ctx.stroke();
 
     // Visor — slightly rectangular
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = this._dayF > 0.3 ? 'rgba(40,50,70,0.35)' : 'rgba(0,0,0,0.45)';
     ctx.beginPath();
     ctx.roundRect(-headW * 0.42, headTop + headH * 0.18, headW * 0.84, headH * 0.52, s * 0.06);
     ctx.fill();
 
-    // Eyes
+    // Eyes — affected by reboot and shock animation
+    const eyeDim = Math.min(this._rebootDim, this._shockDim);
     const blinkY = this.isBlinking ? 0.08 : 1;
     const eyeR = s * 0.13 * (1 + this.eyeWide * 0.35);
     const maxMove = eyeR * 0.45;
     const eix = Math.cos(this.eyeAngle * this.facing) * maxMove;
     const eiy = Math.sin(this.eyeAngle) * maxMove;
+    // Flash white during reboot/recovery flash phase, red during shock
+    const eyeColor = this.state === AGENT_STATES.SHOCKED ? '#ff3333'
+                   : eyeDim > 1.2 ? '#ffffff'
+                   : this.isMedic ? '#00ff88'
+                   : this.color;
 
     [-1, 1].forEach(side => {
       ctx.save();
@@ -719,24 +883,25 @@ export default class Agent {
       ctx.scale(1, blinkY);
 
       // Socket
-      ctx.fillStyle = '#080e1a';
+      ctx.fillStyle = this._tc('#080e1a', '#d0d8e8');
       ctx.beginPath();
       ctx.arc(0, 0, eyeR, 0, Math.PI * 2);
       ctx.fill();
 
-      // Ring glow — gradient instead of shadowBlur
+      // Ring glow — dims during reboot
       const ringGlow = ctx.createRadialGradient(0, 0, eyeR * 0.7, 0, 0, eyeR * 1.5);
-      ringGlow.addColorStop(0, this.color + '55');
+      ringGlow.addColorStop(0, eyeColor + '55');
       ringGlow.addColorStop(1, 'transparent');
       ctx.fillStyle = ringGlow;
+      ctx.globalAlpha = Math.min(eyeDim, 1);
       ctx.beginPath();
       ctx.arc(0, 0, eyeR * 1.5, 0, Math.PI * 2);
       ctx.fill();
 
       // Ring stroke
-      ctx.strokeStyle = this.color;
+      ctx.strokeStyle = eyeColor;
       ctx.lineWidth = 1.5;
-      ctx.globalAlpha = 0.7 + this.eyeWide * 0.3;
+      ctx.globalAlpha = (0.7 + this.eyeWide * 0.3) * Math.min(eyeDim, 1);
       ctx.beginPath();
       ctx.arc(0, 0, eyeR, 0, Math.PI * 2);
       ctx.stroke();
@@ -745,13 +910,15 @@ export default class Agent {
       // Iris
       const irisR = eyeR * 0.65;
       const ig = ctx.createRadialGradient(eix, eiy, 0, eix, eiy, irisR);
-      ig.addColorStop(0, this.color);
-      ig.addColorStop(0.6, this.color + '88');
-      ig.addColorStop(1, this.color + '11');
+      ig.addColorStop(0, eyeColor);
+      ig.addColorStop(0.6, eyeColor + '88');
+      ig.addColorStop(1, eyeColor + '11');
       ctx.fillStyle = ig;
+      ctx.globalAlpha = Math.min(eyeDim, 1);
       ctx.beginPath();
       ctx.arc(eix, eiy, irisR, 0, Math.PI * 2);
       ctx.fill();
+      ctx.globalAlpha = 1;
 
       // Pupil — constricts when surprised
       const pupilR = eyeR * (0.35 - this.pupilConstrict * 0.12);
@@ -795,28 +962,32 @@ export default class Agent {
       ctx.globalAlpha = 1;
     }
 
-    // Antenna
-    ctx.strokeStyle = this.color + '44';
+    // Antenna — dims during reboot
+    const antColor = eyeDim > 1.2 ? '#ffffff' : this.color;
+    ctx.strokeStyle = antColor + '44';
     ctx.lineWidth = 1.5;
+    ctx.globalAlpha = Math.min(eyeDim, 1);
     ctx.beginPath();
     ctx.moveTo(0, headTop);
     ctx.lineTo(0, headTop - s * 0.18);
     ctx.stroke();
+    ctx.globalAlpha = 1;
 
-    const ap = 0.4 + Math.sin(time * 5 + this.homeNode) * 0.4;
+    const ap = (0.4 + Math.sin(time * 5 + this.homeNode) * 0.4) * Math.min(eyeDim, 1);
     // Antenna tip glow
     const tipGlow = ctx.createRadialGradient(0, headTop - s * 0.2, 0, 0, headTop - s * 0.2, s * 0.08);
-    tipGlow.addColorStop(0, this.color + '88');
+    tipGlow.addColorStop(0, antColor + '88');
     tipGlow.addColorStop(1, 'transparent');
     ctx.fillStyle = tipGlow;
+    ctx.globalAlpha = Math.min(eyeDim, 1);
     ctx.beginPath();
     ctx.arc(0, headTop - s * 0.2, s * 0.08, 0, Math.PI * 2);
     ctx.fill();
-    // Tip dot
-    ctx.fillStyle = this.color;
+    // Tip dot — flashes during reboot
+    ctx.fillStyle = antColor;
     ctx.globalAlpha = ap;
     ctx.beginPath();
-    ctx.arc(0, headTop - s * 0.2, 2.5, 0, Math.PI * 2);
+    ctx.arc(0, headTop - s * 0.2, eyeDim > 1.2 ? 3.5 : 2.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
 
@@ -846,5 +1017,32 @@ export default class Agent {
       ctx.fillText('📦', 0, -s * 1.1);
       ctx.globalAlpha = 1;
     }
+  }
+
+  _drawMedicInsignia(ctx, s, time) {
+    // Green + cross on chest
+    const crossSize = s * 0.14;
+    const crossY = s * 0.08;
+
+    // Background glow circle
+    ctx.fillStyle = '#00ff88';
+    ctx.globalAlpha = 0.25 + Math.sin(time * 3) * 0.1;
+    ctx.beginPath();
+    ctx.arc(0, crossY, crossSize * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cross
+    ctx.strokeStyle = '#00ff88';
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = s * 0.06;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-crossSize, crossY);
+    ctx.lineTo(crossSize, crossY);
+    ctx.moveTo(0, crossY - crossSize);
+    ctx.lineTo(0, crossY + crossSize);
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+    ctx.globalAlpha = 1;
   }
 }

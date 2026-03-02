@@ -4,6 +4,11 @@ import data from '../../data/portfolioData';
 
 export default function LiveDemos() {
   const { demos } = data;
+  // Only show items that don't have "Coming Soon" tags
+  const liveItems = demos.items.filter(
+    d => !d.tags.some(t => t.toLowerCase().includes('coming soon'))
+  );
+  const comingSoonCount = demos.items.length - liveItems.length;
 
   return (
     <section id="sec-demos" className="page-section">
@@ -25,7 +30,7 @@ export default function LiveDemos() {
         whileInView="visible"
         viewport={{ once: true, amount: 0.1 }}
       >
-        {demos.items.map((d, i) => (
+        {liveItems.map((d, i) => (
           <motion.div
             key={i}
             variants={fadeUp}
@@ -38,7 +43,11 @@ export default function LiveDemos() {
               {d.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="py-1 px-3 border border-text-muted rounded-full font-mono text-[10px] text-text-dim"
+                  className={`py-1 px-3 border rounded-full font-mono text-[10px] ${
+                    tag === 'Live'
+                      ? 'border-green/40 text-green'
+                      : 'border-text-muted rounded-full text-text-dim'
+                  }`}
                 >
                   {tag}
                 </span>
@@ -47,6 +56,18 @@ export default function LiveDemos() {
           </motion.div>
         ))}
       </motion.div>
+
+      {comingSoonCount > 0 && (
+        <motion.p
+          className="mt-8 font-mono text-[12px] text-text-muted tracking-[1px]"
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true }}
+        >
+          + {comingSoonCount} more demo{comingSoonCount > 1 ? 's' : ''} coming soon
+        </motion.p>
+      )}
     </section>
   );
 }

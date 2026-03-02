@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
-const NODE_COUNT = 50;
-const CONNECT_DIST = 180;
+const NODE_COUNT = 60;
+const CONNECT_DIST = 200;
 const MOUSE_RADIUS = 250;
 
 export default function NeuralBackground() {
@@ -18,7 +18,7 @@ export default function NeuralBackground() {
     function resize() {
       const dpr = window.devicePixelRatio || 1;
       W = window.innerWidth;
-      H = document.documentElement.scrollHeight;
+      H = window.innerHeight;
       canvas.width = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
       canvas.style.width = W + 'px';
@@ -46,9 +46,8 @@ export default function NeuralBackground() {
     function draw() {
       ctx.clearRect(0, 0, W, H);
       const nodes = nodesRef.current;
-      const scrollY = window.scrollY;
       const mx = mouse.current.x;
-      const my = mouse.current.y + scrollY;
+      const my = mouse.current.y;
 
       // Update positions — gentle drift
       for (const n of nodes) {
@@ -80,7 +79,7 @@ export default function NeuralBackground() {
           const dy = nodes[i].y - nodes[j].y;
           const dist = Math.hypot(dx, dy);
           if (dist < CONNECT_DIST) {
-            const alpha = (1 - dist / CONNECT_DIST) * 0.12;
+            const alpha = (1 - dist / CONNECT_DIST) * 0.18;
             ctx.strokeStyle = `rgba(0,240,255,${alpha})`;
             ctx.beginPath();
             ctx.moveTo(nodes[i].x, nodes[i].y);
@@ -111,7 +110,7 @@ export default function NeuralBackground() {
         const nearMouse = mouseDist < MOUSE_RADIUS;
         const glow = nearMouse ? (1 - mouseDist / MOUSE_RADIUS) * 0.5 : 0;
 
-        ctx.fillStyle = `rgba(0,240,255,${0.15 + glow})`;
+        ctx.fillStyle = `rgba(0,240,255,${0.25 + glow})`;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r + glow * 2, 0, Math.PI * 2);
         ctx.fill();
@@ -141,15 +140,10 @@ export default function NeuralBackground() {
     window.addEventListener('resize', resize);
     window.addEventListener('mousemove', onMouse);
 
-    // Re-measure height when content changes
-    const ro = new ResizeObserver(() => resize());
-    ro.observe(document.body);
-
     return () => {
       cancelAnimationFrame(rafRef.current);
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', onMouse);
-      ro.disconnect();
     };
   }, []);
 

@@ -8,6 +8,12 @@ export default class AmbientTheme {
   constructor() {
     this._refreshTime();
     this.hourCheckTimer = 0;
+    this.themeOverride = 'night'; // Default to night theme
+
+    // Apply night time values
+    this.timeF = 0;
+    this.hour = 0;
+    this.period = 'night';
 
     // Stars (pre-generated for night/evening)
     this.stars = [];
@@ -40,8 +46,16 @@ export default class AmbientTheme {
     this.rainDrops = [];
     this.rainIntensity = 0;
 
+    // Snow state
+    this.isSnowing = false;
+    this.snowFlakes = [];
+    this.snowIntensity = 0;
+
     // Moon phase (rough, based on day of month)
     this.moonPhase = (new Date().getDate() % 30) / 30;
+
+    // Cinematic transition state
+    this._trans = { active: false, progress: 1, fromDayF: 0, toDayF: 0, toDay: false };
   }
 
   /* ─── TIME MATH ─── */
@@ -84,7 +98,7 @@ export default class AmbientTheme {
     // Moon visible roughly 19:00 → 5:00 (10 hour window)
     let moonHour = this.timeF;
     if (moonHour >= 19) moonHour -= 19;       // 19→0, 24→5
-    else if (moonHour < 5) moonHour += 5;      // 0→5, 5→10
+    else if (moonHour <= 5) moonHour += 5;     // 0→5, 5→10 (inclusive for smooth set)
     else return { x: -1, y: -1, visible: false }; // moon below horizon
 
     const t = moonHour / 10; // 0→1 across the night
@@ -109,21 +123,97 @@ export default class AmbientTheme {
     return 1 - this._getSunInfluence();
   }
 
-  update(dt) {
-    // Re-check time every 10 seconds (for smooth sun/moon movement)
-    this.hourCheckTimer += dt;
-    if (this.hourCheckTimer > 10) {
-      this.hourCheckTimer = 0;
+  setTheme(theme) {
+    // Capture pre-transition dayF
+    const prevDayF = this._getSunInfluence();
+
+    this.themeOverride = theme === 'auto' ? null : theme;
+    this.isRaining = false;
+    this.isSnowing = false;
+
+    if (theme === 'day') {
+      this.timeF = 12;
+      this.hour = 12;
+      this.period = 'afternoon';
+    } else if (theme === 'night') {
+      this.timeF = 0;
+      this.hour = 0;
+      this.period = 'night';
+    } else if (theme === 'rain') {
+      this.isRaining = true;
+      this.rainTimer = 999;
+    } else if (theme === 'snow') {
+      this.timeF = 22;
+      this.hour = 22;
+      this.period = 'night';
+      this.isSnowing = true;
+    } else {
       this._refreshTime();
     }
 
+    // Start cinematic sweep transition
+    const newDayF = this._getSunInfluence();
+    this._trans = {
+      active: true,
+      progress: 0,
+      fromDayF: prevDayF,
+      toDayF: newDayF,
+      toDay: newDayF > prevDayF, // transitioning toward daylight?
+    };
+  }
+
+  // Transition info for World/Agent to query
+  getTransition() {
+    return this._trans;
+  }
+
+  // How "bright" is the sky? 0 = full dark, 1 = full daylight
+  // Smoothly lerps during cinematic transition
+  getDayFactor() {
+    const raw = this._getSunInfluence();
+    if (this._trans.active) {
+      const p = this._easeInOut(this._trans.progress);
+      return this._trans.fromDayF + (raw - this._trans.fromDayF) * p;
+    }
+    return raw;
+  }
+
+  _easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
+  update(dt) {
+    // Advance cinematic transition
+    if (this._trans.active) {
+      this._trans.progress += dt / 1.8; // 1.8s sweep duration
+      if (this._trans.progress >= 1) {
+        this._trans.active = false;
+        this._trans.progress = 1;
+      }
+    }
+
+    // Re-check time every 10 seconds (for smooth sun/moon movement)
+    if (!this.themeOverride || this.themeOverride === 'rain') {
+      this.hourCheckTimer += dt;
+      if (this.hourCheckTimer > 10) {
+        this.hourCheckTimer = 0;
+        if (!this.themeOverride) this._refreshTime();
+      }
+    }
+
     // Rain cycle
-    this.rainTimer -= dt;
-    if (this.rainTimer <= 0) {
-      this.isRaining = !this.isRaining;
-      this.rainTimer = this.isRaining
-        ? 15 + Math.random() * 30
-        : 60 + Math.random() * 180;
+    if (this.themeOverride === 'rain') {
+      this.isRaining = true;
+    } else if (this.themeOverride === 'snow') {
+      this.isRaining = false;
+    } else if (!this.themeOverride) {
+      this.rainTimer -= dt;
+      if (this.rainTimer <= 0) {
+        this.isRaining = !this.isRaining;
+        this.rainTimer = this.isRaining
+          ? 15 + Math.random() * 30
+          : 60 + Math.random() * 180;
+      }
     }
 
     const targetRain = this.isRaining ? 1 : 0;
@@ -153,6 +243,33 @@ export default class AmbientTheme {
     } else {
       this.rainDrops = [];
     }
+
+    // Snow flakes
+    const targetSnow = this.isSnowing ? 1 : 0;
+    this.snowIntensity += (targetSnow - this.snowIntensity) * dt * 0.3;
+    if (this.snowIntensity > 0.05) {
+      const spawnRate = Math.floor(this.snowIntensity * 2);
+      for (let i = 0; i < spawnRate; i++) {
+        if (this.snowFlakes.length < 120) {
+          this.snowFlakes.push({
+            x: Math.random(),
+            y: -0.02,
+            speed: 0.05 + Math.random() * 0.08,
+            size: 1 + Math.random() * 3,
+            drift: (Math.random() - 0.5) * 0.02,
+            wobble: Math.random() * Math.PI * 2,
+          });
+        }
+      }
+      for (const f of this.snowFlakes) {
+        f.y += f.speed * dt;
+        f.x += f.drift * dt + Math.sin(f.wobble) * 0.001;
+        f.wobble += dt * 2;
+      }
+      this.snowFlakes = this.snowFlakes.filter(f => f.y < 1.1);
+    } else {
+      this.snowFlakes = [];
+    }
   }
 
   draw(ctx, W, H, time) {
@@ -181,6 +298,11 @@ export default class AmbientTheme {
     if (this.rainIntensity > 0.05) {
       this._drawRain(ctx, W, H);
     }
+
+    // Snow
+    if (this.snowIntensity > 0.05) {
+      this._drawSnow(ctx, W, H);
+    }
   }
 
   /* ─── SKY ─── */
@@ -189,31 +311,78 @@ export default class AmbientTheme {
     const t = this.timeF;
     const grad = ctx.createLinearGradient(0, 0, 0, H);
 
-    if (t >= 6 && t < 9) {
-      // Sunrise → morning
-      const f = (t - 6) / 3; // 0→1
-      grad.addColorStop(0, this._lerp('rgba(15,10,30,0.8)', 'rgba(20,25,55,0.65)', f));
-      grad.addColorStop(0.4, this._lerp('rgba(60,25,45,0.4)', 'rgba(30,35,60,0.3)', f));
-      grad.addColorStop(0.7, this._lerp('rgba(130,60,25,0.25)', 'rgba(20,25,45,0.2)', f));
-      grad.addColorStop(1, this._lerp('rgba(180,90,35,0.2)', 'rgba(15,20,40,0.15)', f));
-    } else if (t >= 9 && t < 17) {
-      // Day
-      grad.addColorStop(0, 'rgba(15,25,60,0.6)');
-      grad.addColorStop(0.5, 'rgba(20,30,55,0.3)');
-      grad.addColorStop(1, 'rgba(10,15,35,0.2)');
-    } else if (t >= 17 && t < 20) {
-      // Sunset
-      const f = (t - 17) / 3; // 0→1
-      grad.addColorStop(0, this._lerp('rgba(20,20,55,0.65)', 'rgba(10,8,25,0.7)', f));
-      grad.addColorStop(0.3, this._lerp('rgba(80,20,55,0.35)', 'rgba(20,12,35,0.3)', f));
-      grad.addColorStop(0.6, this._lerp('rgba(140,50,25,0.25)', 'rgba(10,8,20,0.2)', f));
-      grad.addColorStop(1, this._lerp('rgba(100,30,15,0.2)', 'rgba(5,5,15,0.15)', f));
+    // Sky colors — bright & opaque for day, dark & subtle for night
+    // Night: dark sky — opaque enough to own the canvas
+    const night_top = 'rgba(5,8,22,0.95)';
+    const night_mid = 'rgba(8,12,28,0.92)';
+    const night_bot = 'rgba(6,10,20,0.90)';
+
+    // Dawn: warm purple → orange horizon — fully opaque
+    const dawn_top  = 'rgba(35,25,65,0.98)';
+    const dawn_mid  = 'rgba(110,55,75,0.96)';
+    const dawn_low  = 'rgba(190,110,55,0.94)';
+    const dawn_bot  = 'rgba(230,150,75,0.92)';
+
+    // Day: bright blue sky — fully opaque, no dark bleedthrough
+    const day_top   = 'rgba(55,120,200,0.98)';
+    const day_mid   = 'rgba(85,150,220,0.97)';
+    const day_low   = 'rgba(115,175,235,0.96)';
+    const day_bot   = 'rgba(150,200,245,0.94)';
+
+    // Dusk: warm sunset — mostly opaque
+    const dusk_top  = 'rgba(20,12,50,0.98)';
+    const dusk_mid  = 'rgba(90,35,55,0.96)';
+    const dusk_low  = 'rgba(170,75,45,0.94)';
+    const dusk_bot  = 'rgba(210,110,55,0.92)';
+
+    let s0, s1, s2, s3;
+
+    if (t >= 5 && t < 7) {
+      // Night → Dawn
+      const f = (t - 5) / 2;
+      s0 = this._lerp(night_top, dawn_top, f);
+      s1 = this._lerp(night_mid, dawn_mid, f);
+      s2 = this._lerp(night_mid, dawn_low, f);
+      s3 = this._lerp(night_bot, dawn_bot, f);
+    } else if (t >= 7 && t < 10) {
+      // Dawn → Day
+      const f = (t - 7) / 3;
+      s0 = this._lerp(dawn_top, day_top, f);
+      s1 = this._lerp(dawn_mid, day_mid, f);
+      s2 = this._lerp(dawn_low, day_low, f);
+      s3 = this._lerp(dawn_bot, day_bot, f);
+    } else if (t >= 10 && t < 16) {
+      // Day — stable bright sky
+      s0 = day_top;
+      s1 = day_mid;
+      s2 = day_low;
+      s3 = day_bot;
+    } else if (t >= 16 && t < 19) {
+      // Day → Dusk
+      const f = (t - 16) / 3;
+      s0 = this._lerp(day_top, dusk_top, f);
+      s1 = this._lerp(day_mid, dusk_mid, f);
+      s2 = this._lerp(day_low, dusk_low, f);
+      s3 = this._lerp(day_bot, dusk_bot, f);
+    } else if (t >= 19 && t < 21) {
+      // Dusk → Night
+      const f = (t - 19) / 2;
+      s0 = this._lerp(dusk_top, night_top, f);
+      s1 = this._lerp(dusk_mid, night_mid, f);
+      s2 = this._lerp(dusk_low, night_mid, f);
+      s3 = this._lerp(dusk_bot, night_bot, f);
     } else {
-      // Night
-      grad.addColorStop(0, 'rgba(5,8,20,0.5)');
-      grad.addColorStop(0.5, 'rgba(8,12,25,0.3)');
-      grad.addColorStop(1, 'rgba(5,8,15,0.2)');
+      // Night — stable dark
+      s0 = night_top;
+      s1 = night_mid;
+      s2 = night_mid;
+      s3 = night_bot;
     }
+
+    grad.addColorStop(0, s0);
+    grad.addColorStop(0.35, s1);
+    grad.addColorStop(0.65, s2);
+    grad.addColorStop(1, s3);
 
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
@@ -223,8 +392,9 @@ export default class AmbientTheme {
   _lerp(c1, c2, f) {
     const p = (s) => s.match(/[\d.]+/g).map(Number);
     const a = p(c1), b = p(c2);
-    const r = a.map((v, i) => Math.round(v + (b[i] - v) * f));
-    return `rgba(${r[0]},${r[1]},${r[2]},${r[3]})`;
+    const r = a.map((v, i) => v + (b[i] - v) * f);
+    // Round RGB channels, keep alpha as float
+    return `rgba(${Math.round(r[0])},${Math.round(r[1])},${Math.round(r[2])},${r[3].toFixed(3)})`;
   }
 
   /* ─── SUN ─── */
@@ -235,22 +405,20 @@ export default class AmbientTheme {
     const sy = pos.y * H;
 
     // How close to horizon? Warmer color near edges
-    const altitude = 1 - pos.y; // higher = more altitude
+    const altitude = 1 - pos.y;
     const nearHorizon = Math.max(0, 1 - altitude * 2.5);
 
-    // Outer warm glow (large, very visible)
-    const outerR = 80 + influence * 40;
+    // Outer warm glow — large & vivid
+    const outerR = 120 + influence * 60;
     const og = ctx.createRadialGradient(sx, sy, 0, sx, sy, outerR);
     if (nearHorizon > 0.3) {
-      // Warm orange glow near horizon (sunrise/sunset)
-      og.addColorStop(0, `rgba(255,160,60,${0.15 * influence})`);
-      og.addColorStop(0.3, `rgba(255,120,40,${0.08 * influence})`);
-      og.addColorStop(0.6, `rgba(255,80,30,${0.03 * influence})`);
+      og.addColorStop(0, `rgba(255,180,80,${0.35 * influence})`);
+      og.addColorStop(0.25, `rgba(255,140,50,${0.18 * influence})`);
+      og.addColorStop(0.5, `rgba(255,100,30,${0.06 * influence})`);
     } else {
-      // White-yellow glow when high
-      og.addColorStop(0, `rgba(255,245,220,${0.18 * influence})`);
-      og.addColorStop(0.3, `rgba(255,230,180,${0.08 * influence})`);
-      og.addColorStop(0.6, `rgba(255,220,150,${0.03 * influence})`);
+      og.addColorStop(0, `rgba(255,250,220,${0.40 * influence})`);
+      og.addColorStop(0.25, `rgba(255,240,180,${0.18 * influence})`);
+      og.addColorStop(0.5, `rgba(255,230,150,${0.06 * influence})`);
     }
     og.addColorStop(1, 'transparent');
     ctx.fillStyle = og;
@@ -258,35 +426,35 @@ export default class AmbientTheme {
     ctx.arc(sx, sy, outerR, 0, Math.PI * 2);
     ctx.fill();
 
-    // Inner glow ring
-    const innerR = 25 + influence * 15;
-    const ig = ctx.createRadialGradient(sx, sy, 0, sx, sy, innerR);
-    ig.addColorStop(0, `rgba(255,250,230,${0.25 * influence})`);
-    ig.addColorStop(0.5, `rgba(255,240,200,${0.12 * influence})`);
-    ig.addColorStop(1, 'transparent');
-    ctx.fillStyle = ig;
+    // Mid glow ring
+    const midR = 50 + influence * 25;
+    const mg = ctx.createRadialGradient(sx, sy, 0, sx, sy, midR);
+    mg.addColorStop(0, `rgba(255,250,230,${0.45 * influence})`);
+    mg.addColorStop(0.4, `rgba(255,245,200,${0.20 * influence})`);
+    mg.addColorStop(1, 'transparent');
+    ctx.fillStyle = mg;
     ctx.beginPath();
-    ctx.arc(sx, sy, innerR, 0, Math.PI * 2);
+    ctx.arc(sx, sy, midR, 0, Math.PI * 2);
     ctx.fill();
 
-    // Sun core (bright dot)
-    const coreR = 5 + influence * 3;
-    ctx.fillStyle = `rgba(255,250,235,${0.3 * influence})`;
+    // Sun core — bright visible disc
+    const coreR = 10 + influence * 6;
+    ctx.fillStyle = `rgba(255,252,240,${0.55 * influence})`;
     ctx.beginPath();
     ctx.arc(sx, sy, coreR, 0, Math.PI * 2);
     ctx.fill();
 
-    // Tiny bright center
-    ctx.fillStyle = `rgba(255,255,255,${0.4 * influence})`;
+    // Hot center
+    ctx.fillStyle = `rgba(255,255,250,${0.7 * influence})`;
     ctx.beginPath();
-    ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+    ctx.arc(sx, sy, coreR * 0.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Horizon glow (warm light spills when sun is low)
+    // Horizon glow (warm spill when sun is low)
     if (nearHorizon > 0.2) {
-      const hg = ctx.createRadialGradient(sx, H, 0, sx, H, H * 0.4);
-      hg.addColorStop(0, `rgba(255,140,50,${0.06 * nearHorizon * influence})`);
-      hg.addColorStop(0.5, `rgba(255,100,40,${0.02 * nearHorizon * influence})`);
+      const hg = ctx.createRadialGradient(sx, H, 0, sx, H, H * 0.5);
+      hg.addColorStop(0, `rgba(255,160,60,${0.10 * nearHorizon * influence})`);
+      hg.addColorStop(0.4, `rgba(255,120,40,${0.04 * nearHorizon * influence})`);
       hg.addColorStop(1, 'transparent');
       ctx.fillStyle = hg;
       ctx.fillRect(0, 0, W, H);
@@ -389,12 +557,12 @@ export default class AmbientTheme {
   /* ─── CLOUDS ─── */
 
   _drawClouds(ctx, W, H) {
-    const night = this._getNightStrength();
-    const opacityMul = 1 - night * 0.5;
+    const dayF = this.getDayFactor();
+    const opacityMul = 0.5 + dayF * 2; // much brighter/whiter clouds during day
     const colorMap = {
-      morning:   (a) => `rgba(120,80,60,${a})`,
-      afternoon: (a) => `rgba(80,90,120,${a})`,
-      evening:   (a) => `rgba(100,50,40,${a})`,
+      morning:   (a) => `rgba(230,200,170,${a})`,
+      afternoon: (a) => `rgba(240,245,255,${a})`,
+      evening:   (a) => `rgba(200,130,100,${a})`,
       night:     (a) => `rgba(30,35,55,${a})`,
     };
     const colorFn = colorMap[this.period] || colorMap.afternoon;
@@ -434,6 +602,30 @@ export default class AmbientTheme {
       ctx.moveTo(x, y);
       ctx.lineTo(x - 1, y + d.length);
       ctx.stroke();
+    }
+  }
+
+  /* ─── SNOW ─── */
+
+  _drawSnow(ctx, W, H) {
+    const alpha = this.snowIntensity;
+    ctx.fillStyle = `rgba(220,230,250,${0.5 * alpha})`;
+
+    for (const f of this.snowFlakes) {
+      const x = f.x * W;
+      const y = f.y * H;
+      ctx.beginPath();
+      ctx.arc(x, y, f.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Subtle ground accumulation glow
+    if (alpha > 0.3) {
+      const groundGrad = ctx.createLinearGradient(0, H * 0.92, 0, H);
+      groundGrad.addColorStop(0, 'transparent');
+      groundGrad.addColorStop(1, `rgba(200,210,230,${0.03 * alpha})`);
+      ctx.fillStyle = groundGrad;
+      ctx.fillRect(0, H * 0.92, W, H * 0.08);
     }
   }
 }

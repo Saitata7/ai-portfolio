@@ -35,7 +35,7 @@ export default function Projects() {
             >
               <Wrap
                 {...linkProps}
-                className={`block bg-[rgba(12,17,30,0.7)] border border-white/[0.04] rounded-2xl p-5 sm:p-9 transition-all duration-400 hover:border-cyan/15 hover:-translate-y-1 hover:shadow-[0_20px_60px_rgba(0,0,0,0.3)] h-full ${p.link ? 'cursor-pointer' : ''}`}
+                className={`block bg-[rgba(12,17,30,0.7)] border border-white/[0.04] rounded-2xl p-5 sm:p-9 transition-all duration-400 hover:border-cyan/20 hover:-translate-y-1 hover:shadow-[0_8px_40px_rgba(0,240,255,0.08),0_20px_60px_rgba(0,0,0,0.3)] h-full ${p.link ? 'cursor-pointer' : ''}`}
               >
                 <div className="text-4xl mb-4">{p.icon}</div>
                 <h3 className="text-lg sm:text-[22px] font-bold mb-2.5">

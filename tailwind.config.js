@@ -15,8 +15,8 @@ export default {
         orange: '#ff8a00',
         blue: '#3b82f6',
         text: '#e8eaf0',
-        'text-dim': '#6a7490',
-        'text-muted': '#3a4260',
+        'text-dim': '#8a94b0',
+        'text-muted': '#5a6480',
         border: 'rgba(0, 240, 255, 0.08)',
       },
       fontFamily: {
@@ -37,7 +37,6 @@ export default {
         'border-rotate': 'borderRotate 4s linear infinite',
         'loader-spin': 'loaderSpin 2s linear infinite',
         'loader-dash': 'loaderDash 2s ease-in-out infinite',
-        'testim-scroll': 'testimScroll 30s linear infinite',
       },
       keyframes: {
         gradShift: {
@@ -66,9 +65,6 @@ export default {
           '0%': { strokeDashoffset: 280 },
           '50%': { strokeDashoffset: 80 },
           '100%': { strokeDashoffset: 280 },
-        },
-        testimScroll: {
-          to: { transform: 'translateX(-50%)' },
         },
       },
     },

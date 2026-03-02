@@ -3,12 +3,13 @@
    Owns the animation loop, resize, mouse tracking.
    ────────────────────────────── */
 
-import Agent from './entities/Agent.js';
+import Agent, { AGENT_STATES } from './entities/Agent.js';
 import Bug from './entities/Bug.js';
 import { drawWorkstationTheme, drawWorkstationIcon } from './systems/WorkstationThemes.js';
 import BugFightSystem from './systems/BugFightSystem.js';
+import SelfHealSystem from './systems/SelfHealSystem.js';
 import AmbientTheme from './systems/AmbientTheme.js';
-import { getLayoutTier } from '../utils/responsive.js';
+import { getLayoutTier, isTouchDevice } from '../utils/responsive.js';
 
 export const SECTION_DEFS = [
   { label: 'VOICE & NLP',        navQ: 'Where is About Me?',     icon: '🎙️', color: '#00f0ff', section: 'sec-about',      backLabel: 'ABOUT ME',     backDesc: 'My story & expertise' },
@@ -49,11 +50,13 @@ export default class World {
     this.beams = [];
     this.bugFightActive = false;
     this.bugFightSystem = new BugFightSystem(this);
+    this.selfHealSystem = new SelfHealSystem(this);
     this.bugZoneShake = 0;
     this.bugZoneHintShown = false;
 
     // Responsive
     this.layoutTier = 'lg';
+    this._isTouch = isTouchDevice();
 
     // Ambient theme
     this.ambientTheme = new AmbientTheme();
@@ -97,6 +100,22 @@ export default class World {
     window.removeEventListener('scroll', this._onScroll);
   }
 
+  setTheme(theme) {
+    this.ambientTheme.setTheme(theme);
+  }
+
+  pause() {
+    cancelAnimationFrame(this.raf);
+    this.raf = null;
+  }
+
+  resume() {
+    if (!this.raf) {
+      this.lastT = performance.now();
+      this.raf = requestAnimationFrame(this._loop);
+    }
+  }
+
   /* ─── DISPATCH — State transitions ─── */
 
   dispatch(action, payload) {
@@ -114,14 +133,21 @@ export default class World {
         this.callbacks.onStateChange('watching');
         break;
 
-      case 'SET_WORKING':
+      case 'SET_WORKING': {
         this.gState = 'working';
         this.navTarget = -1;
         this.flipTarget = -1;
         this.flipProgress = 0;
-        this.agents.forEach(a => a.returnHome());
+        // Don't interrupt self-heal states
+        const protectedStates = [AGENT_STATES.SHOCKED, AGENT_STATES.COLLAPSED,
+          AGENT_STATES.BEING_HEALED, AGENT_STATES.RECOVERING,
+          AGENT_STATES.MEDIC_WALKING, AGENT_STATES.MEDIC_HEALING];
+        this.agents.forEach(a => {
+          if (!protectedStates.includes(a.state)) a.returnHome();
+        });
         this.callbacks.onStateChange('working');
         break;
+      }
 
       case 'NAVIGATE':
         if (this.gState === 'navigating' || this.gState === 'nav_scrolling') return;
@@ -210,6 +236,7 @@ export default class World {
 
     // Security Vault — bottom right
     this._initBugZone(W, H);
+
   }
 
   _updateLayout(W, H) {
@@ -382,6 +409,13 @@ export default class World {
       return;
     }
 
+    // Agent shock works in both working and watching states
+    if (!this.bugFightActive && this.selfHealSystem.tryShockAgent(cssX, cssY)) {
+      // If we were watching, return to working first so agents unfreeze
+      if (this.gState === 'watching') this.dispatch('SET_WORKING');
+      return; // consumed
+    }
+
     if (this.gState === 'working') {
       this.dispatch('SET_WATCHING', { x: cssX, y: cssY });
     } else if (this.gState === 'watching') {
@@ -395,10 +429,11 @@ export default class World {
     const dt = Math.min((now - this.lastT) / 1000, 0.05);
     this.lastT = now;
     this.time += dt;
+    this.dt = dt;
 
     // Transition fade
     const wantTrans = this.gState === 'watching' ? 1 : 0;
-    this.trans += (wantTrans - this.trans) * 0.08;
+    this.trans += (wantTrans - this.trans) * (1 - Math.pow(0.92, dt * 60));
 
     // Navigation timing (all in rAF — no setTimeout)
     this._updateNavigation(dt);
@@ -409,13 +444,17 @@ export default class World {
     // Ambient theme (behind everything)
     this.ambientTheme.update(dt);
     this.ambientTheme.draw(this.ctx, this.W, this.H, this.time);
+    this.dayF = this.ambientTheme.getDayFactor(); // 0=night, 1=noon
 
     // Bug fight system update
     this.bugFightSystem.update(dt);
 
+    // Self-heal system update
+    this.selfHealSystem.update(dt);
+
     // Bug zone lid animation
     if (this.bugZone) {
-      this.bugZone.lidOpen += (this.bugZone.targetLidOpen - this.bugZone.lidOpen) * 0.1;
+      this.bugZone.lidOpen += (this.bugZone.targetLidOpen - this.bugZone.lidOpen) * (1 - Math.pow(0.9, dt * 60));
       if (this.bugFightActive) {
         this.bugZone.alarmPulse += dt * 4;
       }
@@ -439,11 +478,22 @@ export default class World {
     // Draw beams
     this.beams.forEach(b => b.draw(this.ctx, this.time, this));
 
+    // Self-heal effects (sparks, healing glow, recovery burst)
+    this.selfHealSystem.drawEffects(this.ctx, this.time);
+
     // Mouse glow when watching
     this._drawWatchingEffects();
 
-    // Scan line
-    this.ctx.fillStyle = 'rgba(0,240,255,0.01)';
+    // Cinematic theme transition sweep
+    const themeTrans = this.ambientTheme.getTransition();
+    if (themeTrans.active) {
+      this._drawThemeTransition(themeTrans);
+    }
+
+    // Scan line — darker tint in day
+    this.ctx.fillStyle = this.dayF > 0.3
+      ? 'rgba(0,80,120,0.02)'
+      : 'rgba(0,240,255,0.01)';
     this.ctx.fillRect(0, (this.time * 50) % this.H, this.W, 2);
 
     this.raf = requestAnimationFrame(this._loop);
@@ -481,11 +531,12 @@ export default class World {
     const period = this.ambientTheme.period;
     const gridInterval = this.layoutTier === 'xs' ? 80 : 60;
 
-    // Period-aware grid tint
+    // Period-aware grid tint — adapt for bright sky in daytime
+    const dayF = this.ambientTheme.getDayFactor();
     const gridColors = {
-      morning:   'rgba(255,200,150,0.012)',
-      afternoon: 'rgba(0,240,255,0.015)',
-      evening:   'rgba(255,150,100,0.012)',
+      morning:   dayF > 0.3 ? 'rgba(100,70,40,0.04)' : 'rgba(255,200,150,0.012)',
+      afternoon: dayF > 0.3 ? 'rgba(20,60,120,0.05)' : 'rgba(0,240,255,0.015)',
+      evening:   dayF > 0.3 ? 'rgba(120,60,30,0.04)' : 'rgba(255,150,100,0.012)',
       night:     'rgba(100,150,255,0.015)',
     };
     ctx.strokeStyle = gridColors[period] || gridColors.afternoon;
@@ -499,16 +550,16 @@ export default class World {
 
     // Floating dots — batched into single path
     const dotColors = {
-      morning:   'rgba(255,200,150,0.04)',
-      afternoon: 'rgba(0,240,255,0.05)',
-      evening:   'rgba(255,150,100,0.04)',
+      morning:   dayF > 0.3 ? 'rgba(100,70,40,0.08)' : 'rgba(255,200,150,0.04)',
+      afternoon: dayF > 0.3 ? 'rgba(20,60,120,0.10)' : 'rgba(0,240,255,0.05)',
+      evening:   dayF > 0.3 ? 'rgba(120,60,30,0.08)' : 'rgba(255,150,100,0.04)',
       night:     'rgba(100,160,255,0.05)',
     };
     ctx.fillStyle = dotColors[period] || dotColors.afternoon;
     ctx.beginPath();
     bgDots.forEach(p => {
-      p.x += p.vx * dotSpeed;
-      p.y += p.vy * dotSpeed;
+      p.x += p.vx * dotSpeed * this.dt * 60;
+      p.y += p.vy * dotSpeed * this.dt * 60;
       if (p.x < 0) p.x = W;
       if (p.x > W) p.x = 0;
       if (p.y < 0) p.y = H;
@@ -520,13 +571,16 @@ export default class World {
   }
 
   _drawConns() {
-    const { ctx, nodes, conns, time, gState } = this;
+    const { ctx, nodes, conns, time, gState, dayF } = this;
     conns.forEach((c, ci) => {
       const f = nodes[c.from], t = nodes[c.to];
       const pulseSpeed = gState === 'watching' ? 0.3 : 1;
       const a = 0.05 + Math.sin(time * 2 * pulseSpeed + ci) * 0.02;
 
-      ctx.strokeStyle = `rgba(0,240,255,${a})`;
+      // Darker connection lines in daylight for visibility
+      ctx.strokeStyle = dayF > 0.3
+        ? `rgba(0,120,160,${a + dayF * 0.06})`
+        : `rgba(0,240,255,${a})`;
       ctx.lineWidth = 1;
       ctx.setLineDash([6, 10]);
       const mx = (f.x + t.x) / 2, my = (f.y + t.y) / 2 - 15;
@@ -541,7 +595,9 @@ export default class World {
         const p = (time * 0.3 + ci * 0.15) % 1;
         const px = f.x + (t.x - f.x) * p;
         const py = f.y + (t.y - f.y) * p - Math.sin(p * Math.PI) * 15;
-        ctx.fillStyle = `rgba(0,240,255,${0.25 + Math.sin(time * 4) * 0.1})`;
+        ctx.fillStyle = dayF > 0.3
+          ? `rgba(0,100,150,${0.35 + Math.sin(time * 4) * 0.1})`
+          : `rgba(0,240,255,${0.25 + Math.sin(time * 4) * 0.1})`;
         ctx.beginPath();
         ctx.arc(px, py, 2, 0, Math.PI * 2);
         ctx.fill();
@@ -550,7 +606,23 @@ export default class World {
   }
 
   _drawNodes() {
-    const { ctx, nodes, time, gState, navTarget, trans } = this;
+    const { ctx, nodes, time, gState, navTarget, trans, dayF } = this;
+
+    // Theme-aware box colors
+    const boxFillDark = isT => isT ? [12,17,30,0.95] : [12,17,30,0.85];
+    const boxFillLight = isT => isT ? [255,255,255,0.95] : [245,248,255,0.92];
+    const lerpC = (d, l, f) => {
+      const r = d.map((v,i) => v + (l[i] - v) * f);
+      return `rgba(${Math.round(r[0])},${Math.round(r[1])},${Math.round(r[2])},${r[3].toFixed(2)})`;
+    };
+    // Darken a hex color for readability on white backgrounds
+    const darkenHex = (hex, f) => {
+      const r = parseInt(hex.slice(1,3), 16);
+      const g = parseInt(hex.slice(3,5), 16);
+      const b = parseInt(hex.slice(5,7), 16);
+      return `rgb(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)})`;
+    };
+    const isDay = dayF > 0.3;
 
     nodes.forEach((n, ni) => {
       const isTarget = gState === 'navigating' && ni === navTarget;
@@ -561,9 +633,9 @@ export default class World {
       let showBack = false;
       if (fp > 0) {
         if (fp < 0.5) {
-          scaleX = 1 - Math.pow(fp * 2, 2); // ease-in quad
+          scaleX = 1 - Math.pow(fp * 2, 2);
         } else {
-          scaleX = Math.pow((fp - 0.5) * 2, 0.5); // ease-out sqrt
+          scaleX = Math.pow((fp - 0.5) * 2, 0.5);
           showBack = true;
         }
       }
@@ -572,6 +644,14 @@ export default class World {
       ctx.translate(n.x, n.y);
       if (fp > 0) {
         ctx.scale(Math.max(0.01, scaleX), 1 + (1 - Math.abs(scaleX)) * 0.06);
+      }
+
+      // Drop shadow in day mode — gives boxes depth
+      if (isDay) {
+        ctx.fillStyle = `rgba(0,20,60,${0.10 * dayF})`;
+        ctx.beginPath();
+        ctx.roundRect(-n.w / 2 + 3, -n.h / 2 + 4, n.w, n.h, 14);
+        ctx.fill();
       }
 
       // Glow
@@ -584,16 +664,17 @@ export default class World {
       ctx.arc(0, 0, glowR, 0, Math.PI * 2);
       ctx.fill();
 
-      // Box
-      ctx.fillStyle = isTarget ? 'rgba(12,17,30,0.95)' : 'rgba(12,17,30,0.85)';
+      // Box — dark in night, clean white glass in day
+      ctx.fillStyle = lerpC(boxFillDark(isTarget), boxFillLight(isTarget), dayF);
       ctx.beginPath();
       ctx.roundRect(-n.w / 2, -n.h / 2, n.w, n.h, 14);
       ctx.fill();
 
-      const ba = isTarget ? 0.7 : 0.18 + Math.sin(time * 3 + n.phase) * 0.06;
-      ctx.strokeStyle = n.color;
+      // Border — stronger and darker in day for definition
+      const ba = isTarget ? 0.7 : (isDay ? 0.5 : 0.18) + Math.sin(time * 3 + n.phase) * 0.06;
+      ctx.strokeStyle = isDay ? darkenHex(n.color, 0.6) : n.color;
       ctx.globalAlpha = ba;
-      ctx.lineWidth = isTarget ? 2.5 : 1;
+      ctx.lineWidth = isTarget ? 2.5 : (isDay ? 1.8 : 1);
       ctx.stroke();
       ctx.globalAlpha = 1;
 
@@ -612,25 +693,25 @@ export default class World {
 
       if (showBack) {
         // ── Back face — section info ──
-        const backLabelSz = Math.max(9, Math.round(n.w * 0.1));
+        const backLabelSz = Math.max(10, Math.round(n.w * 0.1));
         ctx.font = `bold ${backLabelSz}px 'JetBrains Mono',monospace`;
-        ctx.fillStyle = n.color;
+        ctx.fillStyle = isDay ? darkenHex(n.color, 0.5) : n.color;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(n.backLabel, 0, -10);
 
-        const backDescSz = Math.max(7, Math.round(n.w * 0.07));
+        const backDescSz = Math.max(8, Math.round(n.w * 0.07));
         ctx.font = `${backDescSz}px 'Outfit',sans-serif`;
-        ctx.fillStyle = '#6a7490';
+        ctx.fillStyle = isDay ? '#2a3450' : '#8a94b0';
         ctx.fillText(n.backDesc, 0, 6);
 
         // "Click to go" prompt — pulsing
         if (gState === 'nav_waiting_click') {
-          const clickSz = Math.max(7, Math.round(n.w * 0.06));
+          const clickSz = Math.max(8, Math.round(n.w * 0.07));
           ctx.font = `bold ${clickSz}px 'JetBrains Mono',monospace`;
           ctx.fillStyle = n.color;
           ctx.globalAlpha = 0.5 + Math.sin(time * 5) * 0.4;
-          ctx.fillText('▸ CLICK TO GO', 0, 24);
+          ctx.fillText(this._isTouch ? '▸ TAP TO GO' : '▸ CLICK TO GO', 0, 24);
 
           // Pulsing border glow
           ctx.strokeStyle = n.color;
@@ -663,15 +744,15 @@ export default class World {
 
         // Progress bar (only when working)
         if (gState === 'working') {
-          n.progress += n.pSpeed;
+          n.progress += n.pSpeed * this.dt * 60;
           if (n.progress > 1) n.progress = 0;
           const bw = n.w - 28, by = n.h / 2 - 13;
-          ctx.fillStyle = 'rgba(255,255,255,0.03)';
+          ctx.fillStyle = isDay ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.03)';
           ctx.beginPath();
           ctx.roundRect(-bw / 2, by, bw, 4, 2);
           ctx.fill();
-          ctx.fillStyle = n.color;
-          ctx.globalAlpha = 0.45;
+          ctx.fillStyle = isDay ? darkenHex(n.color, 0.6) : n.color;
+          ctx.globalAlpha = isDay ? 0.8 : 0.45;
           ctx.beginPath();
           ctx.roundRect(-bw / 2, by, bw * n.progress, 4, 2);
           ctx.fill();
@@ -681,20 +762,20 @@ export default class World {
         // Theme decoration — behind everything, centered in box
         ctx.save();
         ctx.translate(0, -4);
-        drawWorkstationTheme(ctx, n, time, trans);
+        drawWorkstationTheme(ctx, n, time, trans, dayF);
         ctx.restore();
 
         // Icon — canvas-drawn, top area of box
         ctx.save();
         ctx.translate(0, -n.h * 0.2);
-        drawWorkstationIcon(ctx, n);
+        drawWorkstationIcon(ctx, n, dayF);
         ctx.restore();
 
-        // Label — below center, bright and clear
-        const labelSz = Math.max(7, Math.round(n.w * 0.07));
+        // Label — below center. Darkened color in day for readability on white boxes
+        const labelSz = Math.max(9, Math.round(n.w * 0.08));
         ctx.font = `bold ${labelSz}px 'JetBrains Mono',monospace`;
-        ctx.fillStyle = n.color;
-        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = isDay ? darkenHex(n.color, 0.45) : n.color;
+        ctx.globalAlpha = isDay ? 1 : 0.85;
         ctx.fillText(n.label, 0, n.h * 0.28);
         ctx.globalAlpha = 1;
       }
@@ -719,9 +800,10 @@ export default class World {
     // Vault container
     const hw = z.w / 2, hh = z.h / 2;
 
-    // Outer border — double line
-    ctx.strokeStyle = bugFightActive ? '#ff3333' : '#00ff88';
-    ctx.globalAlpha = 0.3;
+    // Outer border — double line (stronger in day for visibility)
+    const dayVault = this.dayF > 0.3;
+    ctx.strokeStyle = bugFightActive ? '#ff3333' : (dayVault ? '#008855' : '#00ff88');
+    ctx.globalAlpha = dayVault ? 0.5 : 0.3;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.roundRect(-hw - 3, -hh - 3, z.w + 6, z.h + 6, 8);
@@ -729,21 +811,21 @@ export default class World {
 
     // Hazard dashes on outer border
     ctx.setLineDash([4, 4]);
-    ctx.globalAlpha = 0.15;
+    ctx.globalAlpha = dayVault ? 0.25 : 0.15;
     ctx.beginPath();
     ctx.roundRect(-hw - 6, -hh - 6, z.w + 12, z.h + 12, 10);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Inner fill
-    ctx.fillStyle = 'rgba(6,8,13,0.9)';
+    // Inner fill — frosted white in day, dark in night
+    ctx.fillStyle = dayVault ? 'rgba(235,242,252,0.90)' : 'rgba(6,8,13,0.9)';
     ctx.beginPath();
     ctx.roundRect(-hw, -hh, z.w, z.h, 6);
     ctx.fill();
 
     // Inner border
-    ctx.strokeStyle = bugFightActive ? '#ff3333' : '#00ff88';
-    ctx.globalAlpha = 0.25;
+    ctx.strokeStyle = bugFightActive ? '#ff3333' : (dayVault ? '#008855' : '#00ff88');
+    ctx.globalAlpha = dayVault ? 0.4 : 0.25;
     ctx.lineWidth = 1;
     ctx.stroke();
     ctx.globalAlpha = 1;
@@ -778,8 +860,8 @@ export default class World {
       ctx.globalAlpha = alarmAlpha;
       ctx.fillText('⚠️ BREACH!', 0, hh + 12);
     } else {
-      ctx.fillStyle = '#00ff88';
-      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = this.dayF > 0.3 ? '#006644' : '#00ff88';
+      ctx.globalAlpha = this.dayF > 0.3 ? 0.8 : 0.5;
       ctx.fillText('SECURITY VAULT', 0, hh + 12);
     }
     ctx.globalAlpha = 1;
@@ -787,7 +869,7 @@ export default class World {
     // Hint text — only before first click
     if (!this.bugZoneHintShown && !bugFightActive) {
       ctx.font = "7px 'Outfit',sans-serif";
-      ctx.fillStyle = '#6a7490';
+      ctx.fillStyle = this.dayF > 0.3 ? '#3a4260' : '#6a7490';
       ctx.globalAlpha = 0.4 + Math.sin(time * 2) * 0.15;
       ctx.fillText('click to test defenses', 0, hh + 24);
       ctx.globalAlpha = 1;
@@ -809,26 +891,140 @@ export default class World {
   }
 
   _drawWatchingEffects() {
-    const { ctx, trans, mouse, W, H } = this;
+    const { ctx, trans, mouse, W, H, dayF } = this;
 
-    // Vignette during watching
+    // Subtle vignette during watching — lighter in day mode
     if (trans > 0.1) {
-      const vg = ctx.createRadialGradient(W / 2, H / 2, W * 0.15, W / 2, H / 2, W * 0.65);
+      const vigAlpha = dayF > 0.3 ? 0.04 : 0.08;
+      const vg = ctx.createRadialGradient(W / 2, H / 2, W * 0.25, W / 2, H / 2, W * 0.7);
       vg.addColorStop(0, 'transparent');
-      vg.addColorStop(1, `rgba(0,0,0,${0.2 * trans})`);
+      vg.addColorStop(1, `rgba(0,0,0,${vigAlpha * trans})`);
       ctx.fillStyle = vg;
       ctx.fillRect(0, 0, W, H);
     }
 
     // Mouse glow when watching
     if (trans > 0.1) {
-      const mg = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 140);
-      mg.addColorStop(0, `rgba(255,0,170,${0.05 * trans})`);
+      const glowColor = dayF > 0.3 ? '0,100,180' : '255,0,170';
+      const mg = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 160);
+      mg.addColorStop(0, `rgba(${glowColor},${0.08 * trans})`);
+      mg.addColorStop(0.5, `rgba(${glowColor},${0.03 * trans})`);
       mg.addColorStop(1, 'transparent');
       ctx.fillStyle = mg;
       ctx.beginPath();
-      ctx.arc(mouse.x, mouse.y, 140, 0, Math.PI * 2);
+      ctx.arc(mouse.x, mouse.y, 160, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /* ─── CINEMATIC THEME TRANSITION ─── */
+
+  _drawThemeTransition(tr) {
+    const { ctx, W, H, time } = this;
+    const p = tr.progress;
+    const sweepX = p * (W + 120) - 60;
+    const toDay = tr.toDay;
+
+    ctx.save();
+
+    // Wide atmospheric wash
+    const washW = W * 0.35;
+    const wash = ctx.createLinearGradient(sweepX - washW, 0, sweepX + washW * 0.3, 0);
+    if (toDay) {
+      wash.addColorStop(0, 'transparent');
+      wash.addColorStop(0.4, `rgba(255,230,150,${0.06 * (1 - p)})`);
+      wash.addColorStop(0.7, `rgba(255,200,100,${0.03 * (1 - p)})`);
+      wash.addColorStop(1, 'transparent');
+    } else {
+      wash.addColorStop(0, 'transparent');
+      wash.addColorStop(0.4, `rgba(60,80,200,${0.06 * (1 - p)})`);
+      wash.addColorStop(0.7, `rgba(40,50,160,${0.03 * (1 - p)})`);
+      wash.addColorStop(1, 'transparent');
+    }
+    ctx.fillStyle = wash;
+    ctx.fillRect(sweepX - washW, 0, washW * 1.3, H);
+
+    // Main sweep band
+    const bandW = 50;
+    const intensity = Math.sin(p * Math.PI);
+    const bandGrad = ctx.createLinearGradient(sweepX - bandW, 0, sweepX + bandW, 0);
+    if (toDay) {
+      bandGrad.addColorStop(0, 'transparent');
+      bandGrad.addColorStop(0.3, `rgba(255,240,180,${0.15 * intensity})`);
+      bandGrad.addColorStop(0.5, `rgba(255,245,200,${0.25 * intensity})`);
+      bandGrad.addColorStop(0.7, `rgba(255,240,180,${0.15 * intensity})`);
+      bandGrad.addColorStop(1, 'transparent');
+    } else {
+      bandGrad.addColorStop(0, 'transparent');
+      bandGrad.addColorStop(0.3, `rgba(100,120,255,${0.12 * intensity})`);
+      bandGrad.addColorStop(0.5, `rgba(140,160,255,${0.20 * intensity})`);
+      bandGrad.addColorStop(0.7, `rgba(100,120,255,${0.12 * intensity})`);
+      bandGrad.addColorStop(1, 'transparent');
+    }
+    ctx.fillStyle = bandGrad;
+    ctx.fillRect(sweepX - bandW, 0, bandW * 2, H);
+
+    // Center line
+    const lineAlpha = 0.35 * intensity;
+    ctx.strokeStyle = toDay
+      ? `rgba(255,245,200,${lineAlpha})`
+      : `rgba(140,160,255,${lineAlpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(sweepX, 0);
+    ctx.lineTo(sweepX, H);
+    ctx.stroke();
+
+    // Sparkle particles
+    for (let i = 0; i < 12; i++) {
+      const phase = time * 12 + i * 2.1;
+      const sy = (Math.sin(phase) * 0.5 + 0.5) * H;
+      const sx = sweepX + Math.sin(time * 18 + i * 3.7) * 25;
+      const sr = 1 + Math.sin(time * 8 + i * 1.3) * 0.8;
+      const sa = (0.4 + Math.sin(time * 10 + i * 2) * 0.3) * intensity;
+
+      const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr * 4);
+      sg.addColorStop(0, toDay
+        ? `rgba(255,240,180,${sa * 0.5})`
+        : `rgba(140,170,255,${sa * 0.5})`);
+      sg.addColorStop(1, 'transparent');
+      ctx.fillStyle = sg;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr * 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = toDay
+        ? `rgba(255,250,220,${sa})`
+        : `rgba(180,200,255,${sa})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Flash ring on each robot as wave passes
+    for (const agent of this.agents) {
+      const dist = agent.x - sweepX;
+      if (dist > -20 && dist < 60) {
+        const nearness = 1 - Math.abs(dist - 20) / 40;
+        const flashR = agent.size * 1.2;
+        const fg = ctx.createRadialGradient(
+          agent.x, agent.y, agent.size * 0.3,
+          agent.x, agent.y, flashR,
+        );
+        fg.addColorStop(0, toDay
+          ? `rgba(255,240,180,${0.25 * nearness})`
+          : `rgba(140,170,255,${0.25 * nearness})`);
+        fg.addColorStop(0.6, toDay
+          ? `rgba(255,220,120,${0.08 * nearness})`
+          : `rgba(100,130,255,${0.08 * nearness})`);
+        fg.addColorStop(1, 'transparent');
+        ctx.fillStyle = fg;
+        ctx.beginPath();
+        ctx.arc(agent.x, agent.y, flashR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
   }
 }

@@ -5,17 +5,17 @@ import data from '../../data/portfolioData';
 export default function ContentHero({ onBackToCanvas }) {
   return (
     <section className="relative min-h-[85vh] flex flex-col justify-center px-8 md:px-16 lg:px-24 overflow-hidden">
-      {/* Back to canvas */}
+      {/* Back to canvas — fixed so it stays visible while scrolling */}
       <button
         onClick={onBackToCanvas}
-        className="absolute top-6 right-6 md:top-8 md:right-8 z-10 py-2 px-4 bg-card/80 backdrop-blur-sm border border-border rounded-lg font-mono text-[11px] text-cyan tracking-[1px] cursor-pointer transition-all duration-200 hover:border-cyan/50 hover:bg-card"
+        className="fixed top-6 right-6 md:top-8 md:right-8 z-[100] py-2.5 px-5 bg-dark/90 backdrop-blur-md border border-cyan/20 rounded-lg font-mono text-[11px] text-cyan tracking-[1px] cursor-pointer transition-all duration-200 hover:border-cyan/50 hover:bg-card shadow-[0_0_15px_rgba(0,240,255,0.1)]"
       >
         &larr; CANVAS
       </button>
 
       <div className="max-w-[800px]">
         <motion.h1
-          className="text-[clamp(36px,6vw,72px)] font-black tracking-[-2px] leading-[1.05]"
+          className="text-[clamp(36px,6vw,72px)] font-black tracking-[-2px] leading-[1.05] drop-shadow-[0_0_30px_rgba(0,240,255,0.08)]"
           variants={heroFade(0.1)}
           initial="hidden"
           animate="visible"
@@ -47,7 +47,7 @@ export default function ContentHero({ onBackToCanvas }) {
               href={data.social.github}
               target="_blank"
               rel="noopener noreferrer"
-              className="py-2 px-4 bg-card/60 border border-border rounded-lg font-mono text-[11px] text-text-dim tracking-[0.5px] transition-all duration-200 hover:border-cyan/40 hover:text-cyan"
+              className="py-2.5 px-5 bg-card/60 border border-cyan/20 rounded-lg font-mono text-[12px] text-text tracking-[0.5px] transition-all duration-200 hover:border-cyan/50 hover:text-cyan hover:bg-card/80"
             >
               GitHub
             </a>
@@ -57,7 +57,7 @@ export default function ContentHero({ onBackToCanvas }) {
               href={data.social.linkedin}
               target="_blank"
               rel="noopener noreferrer"
-              className="py-2 px-4 bg-card/60 border border-border rounded-lg font-mono text-[11px] text-text-dim tracking-[0.5px] transition-all duration-200 hover:border-cyan/40 hover:text-cyan"
+              className="py-2.5 px-5 bg-card/60 border border-cyan/20 rounded-lg font-mono text-[12px] text-text tracking-[0.5px] transition-all duration-200 hover:border-cyan/50 hover:text-cyan hover:bg-card/80"
             >
               LinkedIn
             </a>
@@ -65,12 +65,12 @@ export default function ContentHero({ onBackToCanvas }) {
         </motion.div>
 
         <motion.p
-          className="mt-10 font-mono text-[11px] text-text-muted/50 tracking-[1px]"
+          className="mt-10 font-mono text-[11px] text-text-dim/70 tracking-[1px]"
           variants={heroFade(0.7)}
           initial="hidden"
           animate="visible"
         >
-          {data.about.stats}
+          MS Computer Science &bull; AWS Certified Developer &bull; 5+ years shipping AI
         </motion.p>
       </div>
     </section>

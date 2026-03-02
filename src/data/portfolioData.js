@@ -71,16 +71,27 @@ const portfolioData = {
     label: 'Stack',
     title: 'What powers the work',
     description: 'The languages, frameworks, and platforms I reach for daily.',
-    items: [
-      'Python', 'TypeScript', 'Java',
-      'React', 'Next.js', 'NestJS',
-      'Spring Boot', 'FastAPI', 'Flask',
-      'OpenAI API', 'Claude API', 'LangChain',
-      'Hugging Face', 'TensorFlow', 'PyTorch',
-      'AWS', 'SageMaker', 'Lambda',
-      'PostgreSQL', 'MongoDB', 'Redis',
-      'Docker', 'Kubernetes', 'CI/CD',
-      'Vapi AI', 'Prisma', 'RAG Systems',
+    categories: [
+      {
+        name: 'Languages',
+        items: ['Python', 'TypeScript', 'Java'],
+      },
+      {
+        name: 'Frontend & Backend',
+        items: ['React', 'Next.js', 'NestJS', 'Spring Boot', 'FastAPI', 'Flask'],
+      },
+      {
+        name: 'AI / ML',
+        items: ['OpenAI API', 'Claude API', 'LangChain', 'Hugging Face', 'TensorFlow', 'PyTorch', 'Vapi AI', 'RAG Systems'],
+      },
+      {
+        name: 'Cloud & Infra',
+        items: ['AWS', 'SageMaker', 'Lambda', 'Docker', 'Kubernetes', 'CI/CD'],
+      },
+      {
+        name: 'Data',
+        items: ['PostgreSQL', 'MongoDB', 'Redis', 'Prisma'],
+      },
     ],
   },
 
