@@ -336,7 +336,7 @@ export default class World {
         this.bugZoneHintShown = true;
         this.bugs = [];
         this.dispatch('BUG_BREACH');
-        this.bugFightSystem.spawnBugs(5);
+        this.bugFightSystem.spawnBugs(7);
       }
       return;
     }

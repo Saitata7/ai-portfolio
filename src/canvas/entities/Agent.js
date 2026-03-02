@@ -566,86 +566,111 @@ export default class Agent {
         break;
       }
       case 'sword': {
-        // Energy sword — glowing blade from hilt
+        // Energy sword — wide glowing blade
         const swordAngle = -0.6 + Math.sin(time * 3) * 0.15;
         ctx.save();
         ctx.rotate(swordAngle);
         // Hilt
         ctx.fillStyle = '#1a2845';
         ctx.strokeStyle = this.color + '88';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.roundRect(-s * 0.03, -s * 0.04, s * 0.06, s * 0.12, 1);
+        ctx.roundRect(-s * 0.045, -s * 0.04, s * 0.09, s * 0.14, 2);
         ctx.fill();
         ctx.stroke();
         // Cross-guard
-        ctx.fillStyle = this.color + '44';
+        ctx.fillStyle = this.color + '66';
         ctx.beginPath();
-        ctx.roundRect(-s * 0.08, -s * 0.045, s * 0.16, s * 0.025, 1);
+        ctx.roundRect(-s * 0.12, -s * 0.05, s * 0.24, s * 0.035, 2);
         ctx.fill();
-        // Blade — glowing energy
-        const bladeLen = s * 0.55;
-        const bladeGrad = ctx.createLinearGradient(0, -s * 0.04, 0, -s * 0.04 - bladeLen);
-        bladeGrad.addColorStop(0, this.color + 'cc');
-        bladeGrad.addColorStop(0.7, this.color + '88');
-        bladeGrad.addColorStop(1, this.color + '22');
+        // Blade — wide and bright
+        const bladeLen = s * 0.65;
+        const bladeGrad = ctx.createLinearGradient(0, -s * 0.05, 0, -s * 0.05 - bladeLen);
+        bladeGrad.addColorStop(0, this.color + 'ee');
+        bladeGrad.addColorStop(0.5, this.color + 'aa');
+        bladeGrad.addColorStop(1, this.color + '44');
         ctx.fillStyle = bladeGrad;
         ctx.beginPath();
-        ctx.moveTo(-s * 0.025, -s * 0.04);
-        ctx.lineTo(s * 0.025, -s * 0.04);
-        ctx.lineTo(s * 0.008, -s * 0.04 - bladeLen);
-        ctx.lineTo(-s * 0.008, -s * 0.04 - bladeLen);
+        ctx.moveTo(-s * 0.05, -s * 0.05);
+        ctx.lineTo(s * 0.05, -s * 0.05);
+        ctx.lineTo(s * 0.015, -s * 0.05 - bladeLen);
+        ctx.lineTo(-s * 0.015, -s * 0.05 - bladeLen);
         ctx.closePath();
         ctx.fill();
-        // Blade glow aura
-        const auraGrad = ctx.createLinearGradient(0, -s * 0.04, 0, -s * 0.04 - bladeLen);
-        auraGrad.addColorStop(0, this.color + '33');
+        // Blade edge glow
+        ctx.strokeStyle = this.color;
+        ctx.globalAlpha = 0.6;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(-s * 0.05, -s * 0.05);
+        ctx.lineTo(-s * 0.015, -s * 0.05 - bladeLen);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(s * 0.05, -s * 0.05);
+        ctx.lineTo(s * 0.015, -s * 0.05 - bladeLen);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        // Glow aura
+        const auraGrad = ctx.createLinearGradient(0, -s * 0.05, 0, -s * 0.05 - bladeLen);
+        auraGrad.addColorStop(0, this.color + '44');
         auraGrad.addColorStop(1, 'transparent');
         ctx.fillStyle = auraGrad;
         ctx.beginPath();
-        ctx.moveTo(-s * 0.06, -s * 0.04);
-        ctx.lineTo(s * 0.06, -s * 0.04);
-        ctx.lineTo(s * 0.015, -s * 0.04 - bladeLen);
-        ctx.lineTo(-s * 0.015, -s * 0.04 - bladeLen);
+        ctx.moveTo(-s * 0.1, -s * 0.05);
+        ctx.lineTo(s * 0.1, -s * 0.05);
+        ctx.lineTo(s * 0.025, -s * 0.05 - bladeLen);
+        ctx.lineTo(-s * 0.025, -s * 0.05 - bladeLen);
         ctx.closePath();
         ctx.fill();
         ctx.restore();
         break;
       }
       case 'shield': {
-        // Energy shield — translucent arc barrier
+        // Energy shield — large glowing arc barrier
         ctx.save();
-        ctx.translate(s * 0.08, -s * 0.1);
-        const shieldPulse = 0.7 + Math.sin(time * 4) * 0.15;
-        // Shield arc
-        const shieldGrad = ctx.createRadialGradient(0, 0, s * 0.08, 0, 0, s * 0.35);
-        shieldGrad.addColorStop(0, this.color + '11');
-        shieldGrad.addColorStop(0.5, this.color + '22');
-        shieldGrad.addColorStop(1, this.color + '05');
+        ctx.translate(s * 0.1, -s * 0.05);
+        const shieldPulse = 0.8 + Math.sin(time * 4) * 0.15;
+        const shieldR = s * 0.5;
+        // Shield fill
+        const shieldGrad = ctx.createRadialGradient(0, 0, s * 0.1, 0, 0, shieldR);
+        shieldGrad.addColorStop(0, this.color + '18');
+        shieldGrad.addColorStop(0.6, this.color + '30');
+        shieldGrad.addColorStop(1, this.color + '08');
         ctx.fillStyle = shieldGrad;
         ctx.globalAlpha = shieldPulse;
         ctx.beginPath();
-        ctx.arc(0, 0, s * 0.35, -Math.PI * 0.6, Math.PI * 0.6);
+        ctx.arc(0, 0, shieldR, -Math.PI * 0.65, Math.PI * 0.65);
         ctx.lineTo(0, 0);
         ctx.closePath();
         ctx.fill();
-        // Shield edge ring
+        // Shield edge — bright
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = 1.5;
-        ctx.globalAlpha = shieldPulse * 0.8;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = shieldPulse * 0.9;
         ctx.beginPath();
-        ctx.arc(0, 0, s * 0.35, -Math.PI * 0.6, Math.PI * 0.6);
+        ctx.arc(0, 0, shieldR, -Math.PI * 0.65, Math.PI * 0.65);
         ctx.stroke();
-        // Inner hex pattern
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 0.5;
-        ctx.globalAlpha = 0.2;
+        // Inner rings
+        ctx.lineWidth = 0.8;
+        ctx.globalAlpha = 0.25;
         for (let i = 0; i < 3; i++) {
-          const hr = s * 0.12 + i * s * 0.08;
+          const hr = s * 0.15 + i * s * 0.12;
           ctx.beginPath();
-          ctx.arc(0, 0, hr, -Math.PI * 0.5, Math.PI * 0.5);
+          ctx.arc(0, 0, hr, -Math.PI * 0.55, Math.PI * 0.55);
           ctx.stroke();
         }
+        // Center hex
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          const hx = Math.cos(a) * s * 0.08;
+          const hy = Math.sin(a) * s * 0.08;
+          i === 0 ? ctx.moveTo(hx, hy) : ctx.lineTo(hx, hy);
+        }
+        ctx.closePath();
+        ctx.fill();
         ctx.globalAlpha = 1;
         ctx.restore();
         break;

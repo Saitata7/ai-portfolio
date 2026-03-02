@@ -8,8 +8,9 @@ import ZapBeam from '../entities/ZapBeam.js';
 import { AGENT_STATES } from '../entities/Agent.js';
 
 const ZAP_RANGE = 45;
-const MAX_BUGS = 12;
-const WAVE_INTERVAL = 3.5; // seconds between waves
+const MAX_BUGS = 14;
+const WAVE_INTERVAL = 3.0; // seconds between waves
+const CHASE_DELAY = 1.8; // seconds before agents start chasing (let bugs spread first)
 const WEAPON_TYPES = ['beam', 'sword', 'shield'];
 
 export default class BugFightSystem {
@@ -81,13 +82,15 @@ export default class BugFightSystem {
     if (this.wavesSpawned < this.maxWaves) {
       this.waveTimer += dt;
       if (this.waveTimer > WAVE_INTERVAL) {
-        this.spawnBugs(3 + Math.floor(Math.random() * 2));
+        this.spawnBugs(4 + Math.floor(Math.random() * 3));
         this.waveTimer = 0;
       }
     }
 
-    // Assign chasers
-    this.assignChasers();
+    // Assign chasers — delay so bugs spread across canvas first
+    if (this.fightTimer > CHASE_DELAY) {
+      this.assignChasers();
+    }
 
     // Check for zap-range hits
     for (const agent of world.agents) {
