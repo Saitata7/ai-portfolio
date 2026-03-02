@@ -34,8 +34,8 @@ export default class Bug {
   escape(vaultX, vaultY) {
     this.state = 'escaping';
     const angleFromCenter = Math.atan2(this.y - vaultY, this.x - vaultX);
-    this.angle = angleFromCenter + (Math.random() - 0.5) * Math.PI * 0.8;
-    this.speed = 4 + Math.random() * 3; // Fast initial burst
+    this.angle = angleFromCenter + (Math.random() - 0.5) * Math.PI * 1.2;
+    this.speed = 6 + Math.random() * 4; // Fast initial burst — wide scatter
     this.wiggle = 0;
   }
 
@@ -69,22 +69,22 @@ export default class Bug {
 
       case 'escaping': {
         this.wiggle += dt * 10;
-        // Initial burst decays, then steer toward attack target (workstation)
-        this.speed = Math.max(2.0, this.speed - dt * 1.0);
+        // Burst decays slowly, stays fast to reach distant workstations
+        this.speed = Math.max(3.0, this.speed - dt * 0.5);
         const noiseE = Math.sin(this.wiggle * 3.7) * 0.6 + Math.sin(this.wiggle * 7.3) * 0.4
           + Math.sin(this.wiggle * 1.1) * 0.3;
 
-        if (this.attackTarget && this.speed < 3.5) {
-          // Steer toward target workstation with erratic wobble
+        if (this.attackTarget) {
+          // Strong steering toward target workstation
           const toTargetAngle = Math.atan2(
             this.attackTarget.y - this.y,
             this.attackTarget.x - this.x,
           );
-          // Blend toward target angle with noise for organic feel
           let angleDiff = toTargetAngle - this.angle;
           while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
           while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-          this.angle += angleDiff * 0.04 + noiseE * dt * 3;
+          // Stronger steering (0.12) so bugs actually reach targets
+          this.angle += angleDiff * 0.12 + noiseE * dt * 2;
         } else {
           this.angle += noiseE * dt * 4;
         }
@@ -111,8 +111,8 @@ export default class Bug {
             + Math.sin(this.wiggle * 7.3) * 0.5
             + Math.sin(this.wiggle * 11.1) * 0.3;
           this.angle = fleeAngle + noiseF;
-          // Fast fleeing with random bursts
-          this.speed = 1.8 + Math.sin(this.wiggle * 5) * 0.8;
+          // Fast fleeing with random bursts — keeps bugs moving far
+          this.speed = 2.5 + Math.sin(this.wiggle * 5) * 1.2;
         } else {
           // No chaser — wander all over the canvas
           this.wiggle += dt * 5;

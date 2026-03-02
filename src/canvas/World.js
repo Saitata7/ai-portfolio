@@ -623,21 +623,24 @@ export default class World {
           ctx.globalAlpha = 1;
         }
 
-        // Icon — canvas-drawn
+        // Theme decoration — behind everything, centered in box
         ctx.save();
-        ctx.translate(0, -10);
+        ctx.translate(0, -4);
+        drawWorkstationTheme(ctx, n, time, trans);
+        ctx.restore();
+
+        // Icon — canvas-drawn, top area of box
+        ctx.save();
+        ctx.translate(0, -n.h * 0.2);
         drawWorkstationIcon(ctx, n);
         ctx.restore();
 
-        // Label
-        ctx.font = "bold 8px 'JetBrains Mono',monospace";
+        // Label — below center, bright and clear
+        ctx.font = "bold 9px 'JetBrains Mono',monospace";
         ctx.fillStyle = n.color;
-        ctx.globalAlpha = 0.6;
-        ctx.fillText(n.label, 0, 18);
+        ctx.globalAlpha = 0.85;
+        ctx.fillText(n.label, 0, n.h * 0.28);
         ctx.globalAlpha = 1;
-
-        // Theme decoration
-        drawWorkstationTheme(ctx, n, time, trans);
       }
 
       ctx.restore();

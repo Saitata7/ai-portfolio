@@ -240,7 +240,7 @@ export default class Agent {
         if (this.chasingBug) {
           this.targetX = this.chasingBug.x;
           this.targetY = this.chasingBug.y;
-          if (this._walkTo(dt, 1.8)) {
+          if (this._walkTo(dt, 2.4)) {
             // Close enough to zap
           }
         }
@@ -274,6 +274,7 @@ export default class Agent {
     ctx.scale(this.facing, 1);
     ctx.scale(sb, sb);
 
+    this._drawGlow(ctx, s, time);
     this._drawShadow(ctx, s);
     this._drawLegs(ctx, s, time);
     this._drawBody(ctx, s, time);
@@ -284,6 +285,22 @@ export default class Agent {
     this._drawCarryingIndicator(ctx, s, world.gState);
 
     ctx.restore();
+  }
+
+  _drawGlow(ctx, s, time) {
+    // Soft colored aura around the agent
+    const pulse = 0.12 + Math.sin(time * 2.5 + this.id * 2) * 0.04;
+    const glowR = s * 1.1;
+    const glow = ctx.createRadialGradient(0, s * 0.1, s * 0.2, 0, s * 0.1, glowR);
+    glow.addColorStop(0, this.color + '30');
+    glow.addColorStop(0.5, this.color + '12');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.globalAlpha = pulse + (this.state === AGENT_STATES.BUG_CHASE ? 0.15 : 0);
+    ctx.beginPath();
+    ctx.arc(0, s * 0.1, glowR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   _drawShadow(ctx, s) {

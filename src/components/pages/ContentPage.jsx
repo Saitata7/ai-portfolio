@@ -1,4 +1,5 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
+import NeuralBackground from '../layout/NeuralBackground';
 import ContentHero from '../sections/ContentHero';
 import About from '../sections/About';
 import Projects from '../sections/Projects';
@@ -32,7 +33,8 @@ export default function ContentPage({ targetSection, onClearTarget, onBackToCanv
   }, [targetSection]);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen relative">
+      <NeuralBackground />
       <ContentHero onBackToCanvas={onBackToCanvas} />
       <About />
       <Projects />

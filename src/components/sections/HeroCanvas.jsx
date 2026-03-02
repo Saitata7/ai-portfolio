@@ -74,17 +74,17 @@ export default function HeroCanvas({ onStatusChange, onNavigate }) {
         style={{ opacity: uiState === 'watching' ? 0.15 : 1 }}
       >
         <h1
-          className="text-[clamp(22px,3.5vw,42px)] font-black tracking-[-1.5px] leading-[1.1] opacity-0 animate-[fadeUp_0.8s_0.3s_forwards]"
+          className="text-[clamp(24px,4vw,48px)] font-black tracking-[-1.5px] leading-[1.1] text-white opacity-0 animate-[fadeUp_0.8s_0.3s_forwards] drop-shadow-[0_0_30px_rgba(0,240,255,0.15)]"
           style={{ transform: 'translateY(20px)' }}
         >
           Sai Tata{' '}
-          <span className="bg-gradient-to-br from-cyan via-pink to-cyan bg-[length:200%_200%] bg-clip-text text-transparent animate-grad-shift">
+          <span className="bg-gradient-to-br from-cyan via-pink to-cyan bg-[length:200%_200%] bg-clip-text text-transparent animate-grad-shift drop-shadow-[0_0_20px_rgba(255,0,110,0.3)]">
             /
           </span>{' '}
           AI Engineer
         </h1>
         <p
-          className="text-[clamp(11px,1.2vw,14px)] text-text-dim font-light mt-2 max-w-[350px] opacity-0 animate-[fadeUp_0.8s_0.6s_forwards]"
+          className="text-[clamp(12px,1.3vw,15px)] text-text/70 font-light mt-3 max-w-[380px] tracking-wide opacity-0 animate-[fadeUp_0.8s_0.6s_forwards]"
           style={{ transform: 'translateY(20px)' }}
         >
           Voice AI &bull; LLM Agents &bull; Full-Stack AI Products
@@ -97,10 +97,10 @@ export default function HeroCanvas({ onStatusChange, onNavigate }) {
         style={{ opacity: uiState === 'working' ? 1 : 0 }}
       >
         <div
-          className="font-mono text-[10px] text-text-muted/60 tracking-[2px] uppercase opacity-0 animate-[fadeUp_0.8s_1.5s_forwards]"
+          className="font-mono text-[10px] text-text-dim/70 tracking-[2px] uppercase opacity-0 animate-[fadeUp_0.8s_1.5s_forwards]"
           style={{ transform: 'translateY(10px)' }}
         >
-          <span className="inline-block py-0.5 px-2 border border-text-muted/40 rounded mr-1 text-text-dim/50 text-[9px]">
+          <span className="inline-block py-0.5 px-2 border border-cyan/30 rounded mr-1 text-cyan/60 text-[9px]">
             CLICK
           </span>{' '}
           to interrupt
